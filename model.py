@@ -12,6 +12,8 @@ import os
 import numpy as np
 import cv2
 import argparse
+import lpips
+from pytorch_msssim import ssim
 class Model(nn.Module):
     def __init__(self, img_size=256, patch_size=8, in_channels=3,
                  encoder_embed_dim=768, encoder_num_heads=12,
@@ -38,6 +40,9 @@ class Model(nn.Module):
             ) for _ in range(4) # Lighter, only 4 layers of decoder block
         ])
         self.reconstruct_projection = nn.Linear(self.decoder_embed_dim, self.in_channels * self.patch_size**2)
+        
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.lpips_loss_fn = lpips.LPIPS(net='alex').eval().to(device)
     
     def forward(self, x):
         with torch.no_grad():
@@ -50,7 +55,7 @@ class Model(nn.Module):
                 x = decoder_block(x)
             return x # shape = (batch_size, num_patches(both images), vector dimension of each patch embed)
     
-    def get_mse_loss(self, x, img_masked, show = False):
+    def get_loss(self, x, original_img, show = False):
         grid_size = self.img_size // self.patch_size # Num of patches along one dimension
         
         current_batch_size = x.shape[0]
@@ -62,7 +67,7 @@ class Model(nn.Module):
         if show:
             # Convert from (C, H, W) to (H, W, C), scale to 0–255, and convert to uint8
             rec_img = reconstructed[0].permute(1, 2, 0).cpu().numpy()
-            gt_img = img_masked[0].permute(1, 2, 0).cpu().numpy()
+            gt_img = original_img[0].permute(1, 2, 0).cpu().numpy()
 
             rec_img = (rec_img * 255).clip(0, 255).astype(np.uint8)
             gt_img = (gt_img * 255).clip(0, 255).astype(np.uint8)
@@ -73,44 +78,54 @@ class Model(nn.Module):
             cv2.destroyAllWindows()
         
         # Calculated MSE loss per pixel
-        mse_loss = F.mse_loss(reconstructed, img_masked)
-        return mse_loss
+        mse_loss = F.mse_loss(reconstructed, original_img)
+        # Calculate SSIM perceptual loss
+        ssim_loss = 1 - ssim(reconstructed, original_img, data_range=1.0)
+        # LPIP perceptual loss
+        reconstructed_lpips = 2 * reconstructed - 1 # normalize tp [-1, 1]
+        original_lpips = 2 * original_img - 1
+        lpips_loss = self.lpips_loss_fn(reconstructed_lpips, original_lpips).mean()
+        
+        return mse_loss + 0.5 * ssim_loss + 0.1 * lpips_loss
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--weights", type=str, required=True)
     args = parser.parse_args()
     
-    left_image_path = os.path.join(os.getcwd(), 'Dataset', 'Val', 'LeftCam', 'left_0.png')
+    left_image_path = os.path.join(os.getcwd(), 'Dataset', 'Val', 'LeftCam', 'left_1.png')
     left_img = Image.open(left_image_path).convert("RGB")
-    right_image_path = os.path.join(os.getcwd(), 'Dataset', 'Val', 'RightCam', 'right_0.png')
+    right_image_path = os.path.join(os.getcwd(), 'Dataset', 'Val', 'RightCam', 'right_1.png')
     right_img = Image.open(right_image_path).convert("RGB")
 
-    img_size = 256
+    img_size = 128
     transform = transforms.Compose([
         transforms.Resize((img_size, img_size)),
         transforms.ToTensor(),
     ])
+    
     visible_tensor = transform(left_img).unsqueeze(0)  
     masked_tensor = transform(right_img).unsqueeze(0) 
 
-    model = Model(img_size=128,
-        patch_size=16,
+    model = Model(
+        img_size=128,
+        patch_size=4,
         in_channels=3,
-        encoder_embed_dim=192,
-        encoder_num_heads=3,
-        decoder_embed_dim=128,
-        decoder_num_heads=2
-        )
+        encoder_embed_dim=384,
+        encoder_num_heads=6,
+        decoder_embed_dim=256,
+        decoder_num_heads=4,
+    )
     
     model.eval()
     map_location = "cuda" if torch.cuda.is_available() else "cpu"
     state_dict = torch.load(os.path.join('Results', args.weights), map_location=map_location, weights_only=True)
     model.load_state_dict(state_dict)
     
+    print(visible_tensor, masked_tensor.shape)
     with torch.no_grad():
         decoder_output = model(visible_tensor)
-        mse_loss = model.get_mse_loss(decoder_output, masked_tensor, show=True)
+        mse_loss = model.get_loss(decoder_output, masked_tensor, show=True)
         print("MSE Loss:", mse_loss.item())
 
         

@@ -22,16 +22,28 @@ class Train():
             transforms.ToTensor(), 
         ])
         print("Loading dataset...")
+        
+        self.train_loader = None
+        self.val_loader = None
+        try:
+            train_dir = 'dataset/Train'
+            val_dir = 'dataset/Val'
 
-        train_dir = 'Dataset/Train'
-        val_dir = 'Dataset/Val'
+            train_dataset = StereoImageDataset(root_dir=train_dir, transform=self.transform)
+            val_dataset = StereoImageDataset(root_dir=val_dir, transform=self.transform)
 
-        train_dataset = StereoImageDataset(root_dir=train_dir, transform=self.transform)
-        val_dataset = StereoImageDataset(root_dir=val_dir, transform=self.transform)
+            self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
+            self.val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+        except:
+            train_dir = '/kaggle/input/dataset/Train'
+            val_dir = '/kaggle/input/dataset/Val'
 
-        self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
-        self.val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+            train_dataset = StereoImageDataset(root_dir=train_dir, transform=self.transform)
+            val_dataset = StereoImageDataset(root_dir=val_dir, transform=self.transform)
 
+            self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
+            self.val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+            
     def train(self, num_epochs, lr):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(device)
@@ -48,7 +60,7 @@ class Train():
                 
                 optimizer.zero_grad()
                 x = self.model(visible)
-                mse_loss = self.model.get_mse_loss(x, masked)
+                mse_loss = self.model.get_loss(x, masked)
                 mse_loss.backward()
                 optimizer.step()
                 
@@ -70,24 +82,31 @@ class Train():
                 left, right = left.to(device), right.to(device)
                 visible, masked = random.choice([(left, right), (right, left)])
                 x = self.model(visible)
-                loss = self.model.get_mse_loss(x, masked)
+                loss = self.model.get_loss(x, masked)
                 total_loss += loss.item()
         self.model.train()
         return total_loss / len(self.val_loader)
 
     def save_weights(self, filename):
-        os.makedirs('Results', exist_ok=True)
-        
-        filepath = os.path.join('Results', filename)
-        torch.save(self.model.state_dict(), filepath)
+        try:
+            os.makedirs('Results', exist_ok=True)
+            filepath = os.path.join('Results', filename)
+            torch.save(self.model.state_dict(), filepath)
+        except:
+            filepath = f'/kaggle/working/{filename}'
+            torch.save(self.model.state_dict(), filepath)
     
     def update_and_save_losses(self, loss_log):
-        os.makedirs("Results", exist_ok=True)
-        log_path = os.path.join("Results", "losses.txt")
-        
+        try:
+            os.makedirs("Results", exist_ok=True)
+            log_path = os.path.join("Results", "losses.txt")
+            with open(log_path, "a") as f:
+                f.write(loss_log)
+        except:
+            log_path = '/kaggle/working/losses.txt'
+            with open(log_path, "a") as f:
+                f.write(loss_log)
         print(loss_log)
-        with open(log_path, "a") as f:
-            f.write(loss_log)
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -100,7 +119,7 @@ if __name__ == "__main__":
     parser.add_argument("--decoder_embed_dim", type=int, default=512)
     parser.add_argument("--decoder_num_heads", type=int, default=8)
     parser.add_argument("--num_epochs", type=int, default=100)
-    parser.add_argument("--lr", type=float, default=0.0004) 
+    parser.add_argument("--lr", type=float, default=0.0001) 
     args = parser.parse_args()
 
     trainer = Train(
