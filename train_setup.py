@@ -45,6 +45,7 @@ class Train():
             self.val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
             
     def train(self, num_epochs, lr, cont=False, checkpoint_path=""):
+        checkpoint = None
         if cont:
             checkpoint = torch.load(checkpoint_path)
             self.model.load_state_dict(checkpoint['model_state_dict'])
@@ -119,11 +120,11 @@ class Train():
             os.makedirs("Results", exist_ok=True)
             log_path = os.path.join("Results", "losses.txt")
             with open(log_path, "a") as f:
-                f.write(loss_log)
+                f.write(loss_log + "\n")
         except:
             log_path = '/kaggle/working/losses.txt'
             with open(log_path, "a") as f:
-                f.write(loss_log)
+                f.write(loss_log + "\n")
         print(loss_log)
         
 if __name__ == "__main__":
