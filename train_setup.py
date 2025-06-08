@@ -44,15 +44,22 @@ class Train():
             self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
             self.val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
             
-    def train(self, num_epochs, lr):
+    def train(self, num_epochs, lr, cont=False, checkpoint_path=""):
+        if cont:
+            checkpoint = torch.load(checkpoint_path)
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(device)
         print(f'Running on {device}')
         
         self.model.train()
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=lr) 
+        if cont:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         
-        for epoch in range(num_epochs):
+        start_epoch = checkpoint['epoch'] + 1 if cont else 0 
+        for epoch in range(start_epoch, num_epochs):
             total_loss = 0.0
             for left, right in tqdm(self.train_loader, desc=f"Epoch {epoch + 1} - Training", leave=False):
                 left, right = left.to(device), right.to(device)
@@ -70,6 +77,17 @@ class Train():
             avg_val_loss = self.evaluate(device)
             loss_log = f'Epoch {epoch+1}/{num_epochs}, Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}'
 
+            # Save checkpoint
+            if epoch != num_epochs - 1:
+                try:
+                    torch.save({
+                        'epoch': epoch,
+                        'model_state_dict': self.model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                    }, checkpoint_path)
+                except:
+                    print('Failed to save checkpoint')
+                    
             filename = 'best.pth' if epoch + 1 == num_epochs else 'last.pth'
             self.save_weights(filename)
             self.update_and_save_losses(loss_log)

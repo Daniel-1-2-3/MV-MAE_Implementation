@@ -14,6 +14,7 @@ import cv2
 import argparse
 import lpips
 from pytorch_msssim import ssim
+
 class Model(nn.Module):
     def __init__(self, img_size=256, patch_size=8, in_channels=3,
                  encoder_embed_dim=768, encoder_num_heads=12,
