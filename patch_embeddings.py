@@ -21,7 +21,7 @@ class PatchEmbedding(nn.Module):
 
     def forward(self, x: Tensor):
         x = self.projection(x)
-        x += self.pos_embeddings
+        x += self.pos_embeddings # auto changes 1st dim to fit
         return x # Returns an array containing embedding for each patch
 
 if __name__ == "__main__":

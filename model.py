@@ -54,8 +54,20 @@ class Model(nn.Module):
         x = self.prepare_decoder_in.forward(x)
         for decoder_block in self.decoder:
             x = decoder_block(x)
+        masked_tokens = x[:, self.num_patches:, :]  # Get decoder outputs for masked tokens
+        num_unique_tokens = torch.unique(masked_tokens, dim=1).shape[1]
+        cos_sim = torch.nn.functional.cosine_similarity(
+            masked_tokens[:, :, None, :], masked_tokens[:, None, :, :], dim=-1
+        )
+        mean_sim = cos_sim.mean().item()
+
+        print(f"[DEBUG] Decoder Output Diversity:")
+        print(f"- Unique patch vectors: {num_unique_tokens}")
+        print(f"- Mean cosine similarity between patch vectors: {mean_sim:.6f}")
+
         # shape = (batch_size, num_patches(both images), vector dimension of each patch embed)
         x = self.reconstruct_projection(x[:, self.num_patches:, :]) # shape = (batch_size, num_patches(decoded image), num_pixels in each patch * channels)
+        print(x.shape)
         return x 
     
     def get_loss(self, x, original_img, show = False):
@@ -126,7 +138,6 @@ if __name__ == "__main__":
     state_dict = torch.load(os.path.join('Results', args.weights), map_location=map_location, weights_only=True)
     model.load_state_dict(state_dict)
     
-    print(visible_tensor, masked_tensor.shape)
     with torch.no_grad():
         decoder_output = model(visible_tensor)
         loss = model.get_loss(decoder_output, masked_tensor, show=True)
