@@ -47,22 +47,22 @@ class Model(nn.Module):
         self.loss_weighting = loss_weighting
     
     def forward(self, x):
-        with torch.no_grad():
-            x = self.patch_embed.forward(x)
-            for encoder_block in self.encoder:
-                x = encoder_block(x)
+        x = self.patch_embed.forward(x)
+        for encoder_block in self.encoder:
+            x = encoder_block(x)
         
-            x = self.prepare_decoder_in.forward(x)
-            for decoder_block in self.decoder:
-                x = decoder_block(x)
-            return x # shape = (batch_size, num_patches(both images), vector dimension of each patch embed)
+        x = self.prepare_decoder_in.forward(x)
+        for decoder_block in self.decoder:
+            x = decoder_block(x)
+        # shape = (batch_size, num_patches(both images), vector dimension of each patch embed)
+        x = self.reconstruct_projection(x[:, self.num_patches:, :]) # shape = (batch_size, num_patches(decoded image), num_pixels in each patch * channels)
+        return x 
     
     def get_loss(self, x, original_img, show = False):
         grid_size = self.img_size // self.patch_size # Num of patches along one dimension
         
         current_batch_size = x.shape[0]
-        reconstructed = self.reconstruct_projection(x[:, self.num_patches:, :])
-        reconstructed = reconstructed.view(current_batch_size, grid_size, grid_size, self.patch_size, self.patch_size, self.in_channels)
+        reconstructed = x.view(current_batch_size, grid_size, grid_size, self.patch_size, self.patch_size, self.in_channels)
         reconstructed = reconstructed.permute(0, 5, 1, 3, 2, 4).contiguous()
         reconstructed = reconstructed.view(current_batch_size, self.in_channels, self.img_size, self.img_size)
         
@@ -84,7 +84,7 @@ class Model(nn.Module):
         # Calculate SSIM perceptual loss
         ssim_loss = 1 - torch.clamp(ssim(reconstructed, original_img, data_range=1.0), min=0.0)
         # LPIP perceptual loss
-        reconstructed_lpips = 2 * reconstructed - 1 # normalize tp [-1, 1]
+        reconstructed_lpips = 2 * reconstructed - 1 # normalize to [-1, 1]
         original_lpips = 2 * original_img - 1
         lpips_loss = self.lpips_loss_fn(reconstructed_lpips, original_lpips).mean()
         lpips_loss = torch.clamp(lpips_loss, min=0.0)

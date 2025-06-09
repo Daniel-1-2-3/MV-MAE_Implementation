@@ -68,11 +68,11 @@ class Train():
                 
                 optimizer.zero_grad()
                 x = self.model(visible)
-                mse_loss = self.model.get_loss(x, masked)
-                mse_loss.backward()
+                loss = self.model.get_loss(x, masked)
+                loss.backward()
                 optimizer.step()
                 
-                total_loss += mse_loss.item()
+                total_loss += loss.item()
             
             avg_train_loss = total_loss / len(self.train_loader)
             avg_val_loss = self.evaluate(device)
