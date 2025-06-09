@@ -12,10 +12,10 @@ from dataset import StereoImageDataset
 class Train():
     def __init__(self, img_size, patch_size, batch_size, in_channels,
                  encoder_embed_dim, encoder_num_heads,
-                 decoder_embed_dim, decoder_num_heads):
+                 decoder_embed_dim, decoder_num_heads, loss_weighting):
 
         self.model = Model(img_size, patch_size, in_channels, encoder_embed_dim,
-                           encoder_num_heads, decoder_embed_dim, decoder_num_heads)
+                           encoder_num_heads, decoder_embed_dim, decoder_num_heads, loss_weighting)
         
         self.transform = transforms.Compose([
             transforms.Resize((img_size, img_size)),

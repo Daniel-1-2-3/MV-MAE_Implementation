@@ -18,7 +18,7 @@ from pytorch_msssim import ssim
 class Model(nn.Module):
     def __init__(self, img_size=256, patch_size=8, in_channels=3,
                  encoder_embed_dim=768, encoder_num_heads=12,
-                 decoder_embed_dim=512, decoder_num_heads=8):
+                 decoder_embed_dim=512, decoder_num_heads=8, loss_weighting=[0.5, 2.0]):
         super().__init__()
         self.img_size, self.in_channels = img_size, in_channels
         self.patch_size = patch_size
@@ -44,6 +44,7 @@ class Model(nn.Module):
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.lpips_loss_fn = lpips.LPIPS(net='alex').eval().to(device)
+        self.loss_weighting = loss_weighting
     
     def forward(self, x):
         with torch.no_grad():
@@ -79,24 +80,25 @@ class Model(nn.Module):
             cv2.destroyAllWindows()
         
         # Calculated MSE loss per pixel
-        mse_loss = F.mse_loss(reconstructed, original_img)
+        mse_loss = torch.clamp(F.mse_loss(reconstructed, original_img), min=0.0)
         # Calculate SSIM perceptual loss
-        ssim_loss = 1 - ssim(reconstructed, original_img, data_range=1.0)
+        ssim_loss = 1 - torch.clamp(ssim(reconstructed, original_img, data_range=1.0), min=0.0)
         # LPIP perceptual loss
         reconstructed_lpips = 2 * reconstructed - 1 # normalize tp [-1, 1]
         original_lpips = 2 * original_img - 1
         lpips_loss = self.lpips_loss_fn(reconstructed_lpips, original_lpips).mean()
+        lpips_loss = torch.clamp(lpips_loss, min=0.0)
         
-        return mse_loss + 0.5 * ssim_loss + 0.1 * lpips_loss
-    
+        return self.loss_weighting[0] * ssim_loss + self.loss_weighting[1] * lpips_loss
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--weights", type=str, required=True)
     args = parser.parse_args()
     
-    left_image_path = os.path.join(os.getcwd(), 'Dataset', 'Val', 'LeftCam', 'left_1.png')
+    left_image_path = os.path.join(os.getcwd(), 'Dataset', 'Val', 'LeftCam', 'left_20.png')
     left_img = Image.open(left_image_path).convert("RGB")
-    right_image_path = os.path.join(os.getcwd(), 'Dataset', 'Val', 'RightCam', 'right_1.png')
+    right_image_path = os.path.join(os.getcwd(), 'Dataset', 'Val', 'RightCam', 'right_20.png')
     right_img = Image.open(right_image_path).convert("RGB")
 
     img_size = 128
@@ -110,12 +112,13 @@ if __name__ == "__main__":
 
     model = Model(
         img_size=128,
-        patch_size=4,
+        patch_size=8,
         in_channels=3,
         encoder_embed_dim=384,
         encoder_num_heads=6,
         decoder_embed_dim=256,
         decoder_num_heads=4,
+        loss_weighting=(0.5, 2.0),
     )
     
     model.eval()
@@ -126,8 +129,8 @@ if __name__ == "__main__":
     print(visible_tensor, masked_tensor.shape)
     with torch.no_grad():
         decoder_output = model(visible_tensor)
-        mse_loss = model.get_loss(decoder_output, masked_tensor, show=True)
-        print("MSE Loss:", mse_loss.item())
+        loss = model.get_loss(decoder_output, masked_tensor, show=True)
+        print("Loss:", loss.item())
 
         
 
