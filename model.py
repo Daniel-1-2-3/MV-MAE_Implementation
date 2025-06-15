@@ -1,6 +1,5 @@
 from patch_embeddings import PatchEmbedding
-from TransformerLayer.multi_head_self_attention import MultiHeadSelfAttention
-from TransformerLayer.feed_fwd import FeedForward
+from TransformerLayer.transformer_block import TransformerBlock
 from decoder_input_prepare import DecoderInputPreparation
 
 import torch
@@ -18,7 +17,7 @@ from pytorch_msssim import ssim
 class Model(nn.Module):
     def __init__(self, img_size=256, patch_size=8, in_channels=3,
                  encoder_embed_dim=768, encoder_num_heads=12,
-                 decoder_embed_dim=512, decoder_num_heads=8, loss_weighting=[0.5, 2.0]):
+                 decoder_embed_dim=512, decoder_num_heads=8, loss_weighting=[1.0, 0.75, 0.50]):
         super().__init__()
         self.img_size, self.in_channels = img_size, in_channels
         self.patch_size = patch_size
@@ -28,17 +27,11 @@ class Model(nn.Module):
         
         self.patch_embed = PatchEmbedding(in_channels, patch_size, encoder_embed_dim, img_size)
         self.encoder = nn.ModuleList([
-            nn.Sequential(
-                MultiHeadSelfAttention(encoder_embed_dim, encoder_num_heads),
-                FeedForward(encoder_embed_dim)
-            ) for _ in range(12) # 12 layers of the encoder block
+            TransformerBlock(encoder_embed_dim, encoder_num_heads) for _ in range(12)
         ])
         self.prepare_decoder_in = DecoderInputPreparation(img_size, patch_size, encoder_embed_dim, decoder_embed_dim)
         self.decoder = nn.ModuleList([
-            nn.Sequential(
-                MultiHeadSelfAttention(decoder_embed_dim, decoder_num_heads),
-                FeedForward(decoder_embed_dim)
-            ) for _ in range(4) # Lighter, only 4 layers of decoder block
+            TransformerBlock(decoder_embed_dim, decoder_num_heads) for _ in range(4)
         ])
         self.reconstruct_projection = nn.Linear(self.decoder_embed_dim, self.in_channels * self.patch_size**2)
         
@@ -47,27 +40,45 @@ class Model(nn.Module):
         self.loss_weighting = loss_weighting
     
     def forward(self, x):
-        x = self.patch_embed.forward(x)
-        for encoder_block in self.encoder:
-            x = encoder_block(x)
-        
-        x = self.prepare_decoder_in.forward(x)
-        for decoder_block in self.decoder:
-            x = decoder_block(x)
-        masked_tokens = x[:, self.num_patches:, :]  # Get decoder outputs for masked tokens
-        num_unique_tokens = torch.unique(masked_tokens, dim=1).shape[1]
+        x = self.patch_embed.forward(x)  # Get decoder outputs for masked tokens
         cos_sim = torch.nn.functional.cosine_similarity(
-            masked_tokens[:, :, None, :], masked_tokens[:, None, :, :], dim=-1
+            x[:, :, None, :], x[:, None, :, :], dim=-1
         )
         mean_sim = cos_sim.mean().item()
+        print(f"Cos sim after patch embed: {mean_sim:.20f}")
+        
+        for encoder_block in self.encoder:
+            x = encoder_block(x)
+            
+        cos_sim = torch.nn.functional.cosine_similarity(
+            x[:, :, None, :], x[:, None, :, :], dim=-1
+        )
+        mean_sim = cos_sim.mean().item()
+        print(f"Cos sim after encoder: {mean_sim:.20f}")
+        
+        
+        x = self.prepare_decoder_in.forward(x)
+        cos_sim = torch.nn.functional.cosine_similarity(
+            x[:, :, None, :], x[:, None, :, :], dim=-1
+        )
+        mean_sim = cos_sim.mean().item()
+        print(f"Cos sim after prepare decoder in: {mean_sim:.20f}")
+        
+        
+        for decoder_block in self.decoder:
+            x = decoder_block(x)
 
-        print(f"[DEBUG] Decoder Output Diversity:")
-        print(f"- Unique patch vectors: {num_unique_tokens}")
-        print(f"- Mean cosine similarity between patch vectors: {mean_sim:.6f}")
-
+        a = x[:, self.num_patches:, :]
+        cos_sim = torch.nn.functional.cosine_similarity(
+            a[:, :, None, :], a[:, None, :, :], dim=-1
+        )
+        mean_sim = cos_sim.mean().item()
+        print(f"Cos sim after decoder: {mean_sim:.20f}")
+        
         # shape = (batch_size, num_patches(both images), vector dimension of each patch embed)
         x = self.reconstruct_projection(x[:, self.num_patches:, :]) # shape = (batch_size, num_patches(decoded image), num_pixels in each patch * channels)
-        print(x.shape)
+        
+        
         return x 
     
     def get_loss(self, x, original_img, show = False):
@@ -101,7 +112,7 @@ class Model(nn.Module):
         lpips_loss = self.lpips_loss_fn(reconstructed_lpips, original_lpips).mean()
         lpips_loss = torch.clamp(lpips_loss, min=0.0)
         
-        return self.loss_weighting[0] * ssim_loss + self.loss_weighting[1] * lpips_loss
+        return self.loss_weighting[0] * ssim_loss + self.loss_weighting[1] * lpips_loss + self.loss_weighting[2] * mse_loss
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -119,7 +130,7 @@ if __name__ == "__main__":
         transforms.ToTensor(),
     ])
     
-    visible_tensor = transform(left_img).unsqueeze(0)  
+    visible_tensor = transform(left_img).unsqueeze(0) # (batch, channels, img_size, img_size)
     masked_tensor = transform(right_img).unsqueeze(0) 
 
     model = Model(
@@ -130,7 +141,7 @@ if __name__ == "__main__":
         encoder_num_heads=6,
         decoder_embed_dim=256,
         decoder_num_heads=4,
-        loss_weighting=(0.5, 2.0),
+        loss_weighting=(0.5, 1.5),
     )
     
     model.eval()

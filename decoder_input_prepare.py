@@ -4,7 +4,6 @@ from torch import Tensor, nn
 class DecoderInputPreparation(nn.Module):
     def __init__(self, img_size, patch_size, encoder_embed_dim, decoder_embed_dim):
         super().__init__()
-        print('d', decoder_embed_dim)
         self.num_patches = int(img_size / patch_size) ** 2
         self.change_dim = nn.Linear(encoder_embed_dim, decoder_embed_dim) # The decoder is more lightweight than encoder
         
