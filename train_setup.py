@@ -26,10 +26,12 @@ class Trainer():
         print("Loading dataset...")
         train_dir, val_dir = os.path.join(base_dataset_dir, 'Train'), os.path.join(base_dataset_dir, 'Val')
         train_dataset = StereoImageDataset(root_dir=train_dir, transform=self.transform)
-        self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
+        self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, 
+            num_workers=8, pin_memory=True, drop_last=True)
         
         val_dataset = StereoImageDataset(root_dir=val_dir, transform=self.transform)
-        self.val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+        self.val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, 
+            num_workers=4, pin_memory=True, drop_last=True)
         
         results_folder = os.path.join(os.getcwd(), 'results')
         if os.path.exists(results_folder):
@@ -68,7 +70,7 @@ class Trainer():
             except:
                 print('Failed to save checkpoint')
     
-    def evaluate(self):
+    def evaluate(self, show=True):
         self.model.eval()
         total_loss = 0.0
         
@@ -78,6 +80,7 @@ class Trainer():
                 out = self.model(x1, x2)
                 loss = self.model.get_loss(out)
                 total_loss += loss.item()
+            self.model.render_reconstructed() # Shows the first pair of the last batch
                 
         self.model.train()
         return total_loss / len(self.val_loader)
