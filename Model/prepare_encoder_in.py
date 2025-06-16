@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from torch import Tensor
 import math, random
+
 class PatchEmbedding(nn.Module):
     def __init__ (self, in_channels, img_size, patch_size, embed_dim, training=True):
         """
@@ -14,7 +15,7 @@ class PatchEmbedding(nn.Module):
             img_size (int):     Side length of the input image
             patch_size (int):   Side length of each patch
             embed_dim (int):    Dimension of each patch token vector
-            training (boolean): During training, one view is masked, and 25% of other 
+            training (bool):    During training, one view is masked, and 25% of other 
                                 view's patches are also masked. (default True)
         """
         super().__init__()
@@ -31,7 +32,7 @@ class PatchEmbedding(nn.Module):
         self.positional_embeds = self.sin_cos_embed(int(math.sqrt(total_patches)), embed_dim)
         self.view1_embed = nn.Parameter(torch.zeros(1, 1, embed_dim), requires_grad=False)
         self.view2_embed = nn.Parameter(torch.ones(1, 1, embed_dim), requires_grad=False)
-
+        self.masked_ids = None
     
     def sin_cos_embed(self, grid_size, embed_dim):
         """
@@ -76,6 +77,7 @@ class PatchEmbedding(nn.Module):
         scores = torch.rand(batch, total_patches, device=x.device) # Random score for each token
         ids_sorted = torch.argsort(scores, dim=1)
         ids_keep = ids_sorted[:, :num_keep]
+        self.masked_ids = ids_keep
 
         x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).expand(-1, -1, embed_dim)) # (batch, kept_patches, embed_dim)
         return x_masked

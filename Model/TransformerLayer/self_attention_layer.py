@@ -5,23 +5,23 @@ import torch.nn.functional as F
 import math
 
 class MultiHeadSelfAttention(nn.Module): 
-    def __init__(self, embedding_dim, num_heads):
+    def __init__(self, embed_dim, num_heads):
         """
         Args:
-            embedding_dim (int):    dimension of input token embeddings, each Q, K, V vectors, and output of this layer
-            num_heads (int):        number of heads that Q, K, V are split between to learn different kinds of relationships
+            embedding_dim (int):    Dimension of input token embeddings, each Q, K, V vectors, and output of this layer
+            num_heads (int):        Number of heads that Q, K, V are split between to learn different kinds of relationships
                                     between patches in parallel
         """
         super().__init__()
         
         self.num_heads = num_heads
-        self.head_dim = int(embedding_dim / num_heads)
+        self.head_dim = int(embed_dim / num_heads)
         
         self.qkv_projection = nn.Sequential(
-            nn.Linear(embedding_dim, 3 * embedding_dim),
+            nn.Linear(embed_dim, 3 * embed_dim),
             nn.Dropout(0.2))
-        self.out_projection = nn.Linear(embedding_dim, embedding_dim)
-        self.norm = nn.LayerNorm(embedding_dim)
+        self.out_projection = nn.Linear(embed_dim, embed_dim)
+        self.norm = nn.LayerNorm(embed_dim)
 
     def forward(self, x: Tensor):
         """

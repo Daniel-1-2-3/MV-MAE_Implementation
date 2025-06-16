@@ -1,19 +1,19 @@
 from torch import Tensor, nn
 class FeedForward(nn.Module):
-    def __init__(self, embedding_dim):
+    def __init__(self, embed_dim):
         """
         Args:
-            embedding_dim (int):    dimension of the input and output token embeddings
+            embed_dim (int):    Dimension of the input and output token embeds
         """
         super().__init__()
         
         self.mlp = nn.Sequential(
-            nn.Linear(embedding_dim, 3 * embedding_dim),
+            nn.Linear(embed_dim, 3 * embed_dim),
             nn.GELU(),
             nn.Dropout(0.2),
-            nn.Linear(3 * embedding_dim, embedding_dim),
+            nn.Linear(3 * embed_dim, embed_dim),
             nn.Dropout(0.2))
-        self.norm = nn.LayerNorm(embedding_dim)
+        self.norm = nn.LayerNorm(embed_dim)
     
     def forward(self, x: Tensor):
         """
