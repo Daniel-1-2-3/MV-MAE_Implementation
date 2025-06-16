@@ -70,16 +70,14 @@ def render_combination(args):
     p.createMultiBody(
         baseVisualShapeIndex=cube_visual,
         baseCollisionShapeIndex=p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.1, 0.1, 0.1]),
-        basePosition=[0, 0, 0.4]
-    )
+        basePosition=[0, 0, 0.4])
 
     sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.3, rgbaColor=[0.7, 0.2, 0.2, 1.0])
     p.createMultiBody(
         baseMass=1,
         baseCollisionShapeIndex=p.createCollisionShape(shapeType=p.GEOM_SPHERE, radius=0.35),
         baseVisualShapeIndex=sphere_visual,
-        basePosition=[0.75, 0, 0.35]
-    )
+        basePosition=[0.75, 0, 0.35])
 
     cam = StereoCamera(3, [0, 0, 0])
     cam.yaw, cam.pitch, cam.r = yaw, pitch, z / 2

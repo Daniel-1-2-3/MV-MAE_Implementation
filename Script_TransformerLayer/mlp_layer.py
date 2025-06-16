@@ -1,5 +1,4 @@
 from torch import Tensor, nn
-
 class FeedForward(nn.Module):
     def __init__(self, embedding_dim):
         """

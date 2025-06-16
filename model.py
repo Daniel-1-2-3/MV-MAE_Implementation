@@ -1,5 +1,5 @@
 from patch_embeddings import PatchEmbedding
-from TransformerLayer.transformer_block import TransformerBlock
+from Script_TransformerLayer.transformer_block import TransformerBlock
 from decoder_input_prepare import DecoderInputPreparation
 
 import torch

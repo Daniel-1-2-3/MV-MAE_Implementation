@@ -4,6 +4,14 @@ from PIL import Image
 
 class StereoImageDataset(Dataset):
     def __init__(self, root_dir, transform=None):
+        """
+        Pytorch-compatible dataset for use with DataLoader
+
+        Args:
+            root_dir (str): Directory of the dataset root folder, which contains the train and val sets
+            transform (torchvision.transforms.Compose): Transformations applied to all images in the dataset, such as resizing
+                                                        and converting RGB to tensor. Defaults to None.
+        """
         self.left_dir = os.path.join(root_dir, "LeftCam")
         self.right_dir = os.path.join(root_dir, "RightCam")
         self.left_images = sorted([f for f in os.listdir(self.left_dir) if f.endswith('.png')])

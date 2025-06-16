@@ -10,18 +10,19 @@ class Augment:
         self.directory = 'Dataset/Train'
 
     def apply_augmentation_pair(self, left_img, right_img, mode):
-        if mode == "noise":
-            noise = np.random.normal(0, 10, left_img.shape).astype(np.int16)
-            left_img = np.clip(left_img.astype(np.int16) + noise, 0, 255).astype(np.uint8)
-            right_img = np.clip(right_img.astype(np.int16) + noise, 0, 255).astype(np.uint8)
-        elif mode == "brightness":
-            shift = random.randint(-40, 40)
-            left_img = np.clip(left_img.astype(np.int16) + shift, 0, 255).astype(np.uint8)
-            right_img = np.clip(right_img.astype(np.int16) + shift, 0, 255).astype(np.uint8)
-        elif mode == "color":
-            factor = np.random.uniform(0.8, 1.2, 3)
-            left_img = np.clip(left_img * factor, 0, 255).astype(np.uint8)
-            right_img = np.clip(right_img * factor, 0, 255).astype(np.uint8)
+        match mode:
+            case "noise":
+                noise = np.random.normal(0, 10, left_img.shape).astype(np.int16)
+                left_img = np.clip(left_img.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+                right_img = np.clip(right_img.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+            case "brightness":
+                shift = random.randint(-40, 40)
+                left_img = np.clip(left_img.astype(np.int16) + shift, 0, 255).astype(np.uint8)
+                right_img = np.clip(right_img.astype(np.int16) + shift, 0, 255).astype(np.uint8)
+            case "color":
+                factor = np.random.uniform(0.8, 1.2, 3)
+                left_img = np.clip(left_img * factor, 0, 255).astype(np.uint8)
+                right_img = np.clip(right_img * factor, 0, 255).astype(np.uint8)
         return left_img, right_img
 
     def augment_pair(self, file):

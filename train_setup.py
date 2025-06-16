@@ -1,3 +1,4 @@
+
 import torch
 from torchvision import transforms
 from torch.utils.data import DataLoader
@@ -7,12 +8,12 @@ import os
 import argparse
 
 from model import Model
-from dataset import StereoImageDataset
+from Script_CreateDataset.dataset import StereoImageDataset
 
 class Train():
     def __init__(self, img_size, patch_size, batch_size, in_channels,
                  encoder_embed_dim, encoder_num_heads,
-                 decoder_embed_dim, decoder_num_heads, loss_weighting):
+                 decoder_embed_dim, decoder_num_heads, loss_weighting=(1, 1, 1)):
 
         self.model = Model(img_size, patch_size, in_channels, encoder_embed_dim,
                            encoder_num_heads, decoder_embed_dim, decoder_num_heads, loss_weighting)
