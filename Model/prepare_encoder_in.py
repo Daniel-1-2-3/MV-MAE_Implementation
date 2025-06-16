@@ -33,6 +33,7 @@ class PrepareEncoderInput(nn.Module):
         self.view2_embed = nn.Parameter(torch.ones(1, 1, embed_dim), requires_grad=False)
         self.visible_ids = None
         self.partial_view_id = None
+        self.partial_view, self.masked_view = None, None
     
     def sin_cos_embed(self, grid_size, embed_dim):
         """
@@ -54,9 +55,8 @@ class PrepareEncoderInput(nn.Module):
             torch.arange(grid_size, dtype=torch.float32),
             torch.arange(grid_size, dtype=torch.float32),
             indexing='ij')
-        grid = torch.stack([grid_x, grid_y], dim=0) # (2, grid_size, grid_size)
-        grid = grid.flatten(2, -1)
-        grid = grid.transpose(0, 1) # (total_patches, 2)
+        grid = torch.stack([grid_x, grid_y], dim=-1)  # (grid_size, grid_size, 2)
+        grid = grid.reshape(-1, 2) # (total_patches, 2)
 
         # Apply sin/cos to x and y poses
         dim_half = embed_dim // 2
@@ -92,6 +92,8 @@ class PrepareEncoderInput(nn.Module):
             (Tensor):   Output is a tensor that includes all unmasked patches, with a
                         shape of (batch, num_unmasked_patches, embed_dim)
         """
+        x1_clone, x2_clone = x1.clone(), x2.clone()
+        
         x1 = self.patch_extract(x1)
         x1 = x1.flatten(2, 3)
         x1 = x1.transpose(1, 2) # (batch, total_patches, embed_dim)
@@ -104,8 +106,18 @@ class PrepareEncoderInput(nn.Module):
         
         x = torch.cat((x1, x2), dim=1)
         if self.training:
-            partial_mask = random.choice([x1, x2]) # Other is fully masked
-            self.partial_view_id = 0 if partial_mask == x1 else 1
-            x = self.random_mask(partial_mask, 0.25)
+            partial_view = random.choice([x1, x2]) # Other is fully masked
+            if partial_view is x1:
+                self.partial_view = x1_clone
+                self.masked_view = x2_clone
+            else:
+                self.partial_view = x2_clone
+                self.masked_view = x1_clone
+            
+            self.partial_view_id = 0 if self.partial_view is x1 else 1
+            x = self.random_mask(partial_view, 0.25)
 
         return x
+    
+    def get_views(self):
+        return self.partial_view, self.masked_view

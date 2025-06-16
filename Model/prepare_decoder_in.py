@@ -66,6 +66,3 @@ class PrepareDecoderInput(nn.Module):
         x += learnable_pos_embeds
         
         return x
-        
-        
-        

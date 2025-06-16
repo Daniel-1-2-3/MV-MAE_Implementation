@@ -1,162 +1,132 @@
-from Model.prepare_encoder_in import PatchEmbedding
-from TransformerLayer.transformer_block import TransformerBlock
-from decoder_input_prepare import DecoderInputPreparation
+from Model.TransformerLayer.transformer_block import Encoder, Decoder
+from Model.prepare_encoder_in import PrepareEncoderInput
+from Model.prepare_decoder_in import PrepareDecoderInput
 
 import torch
-from torch import nn
+from torch import nn, Tensor
 import torch.nn.functional as F
-from PIL import Image
-from torchvision import transforms
-import os
-import numpy as np
-import cv2
-import argparse
-import lpips
 from pytorch_msssim import ssim
+import matplotlib.pyplot as plt
 
 class Model(nn.Module):
-    def __init__(self, img_size=256, patch_size=8, in_channels=3,
+    def __init__(self, img_size=128, patch_size=8, in_channels=3,
                  encoder_embed_dim=768, encoder_num_heads=12,
-                 decoder_embed_dim=512, decoder_num_heads=8, loss_weighting=[1.0, 0.75, 0.50]):
+                 decoder_embed_dim=512, decoder_num_heads=8, 
+                 training=True):
+        
         super().__init__()
+        self.img_size, self.patch_size, self.in_channels = img_size, patch_size, in_channels
+        self.total_patches = int((self.img_size / patch_size) ** 2)
         
-        self.total_patches = int((img_size / patch_size) ** 2)
+        self.prepare_encoder_in = PrepareEncoderInput(
+            in_channels=3, total_patches=self.total_patches, 
+            embed_dim=encoder_embed_dim, training=training,
+        )
+        self.encoder = Encoder(
+            embed_dim=encoder_embed_dim, num_heads=encoder_num_heads
+        )
         
-        self.img_size, self.in_channels = img_size, in_channels
-        self.patch_size = patch_size
-        self.num_patches = int(img_size / patch_size)**2
-        self.encoder_embed_dim = encoder_embed_dim
-        self.decoder_embed_dim = decoder_embed_dim
-        
-        self.patch_embed = PatchEmbedding(in_channels, patch_size, encoder_embed_dim, img_size)
-        self.encoder = nn.ModuleList([
-            TransformerBlock(encoder_embed_dim, encoder_num_heads) for _ in range(12)
-        ])
-        self.prepare_decoder_in = DecoderInputPreparation(img_size, patch_size, encoder_embed_dim, decoder_embed_dim)
-        self.decoder = nn.ModuleList([
-            TransformerBlock(decoder_embed_dim, decoder_num_heads) for _ in range(4)
-        ])
-        self.reconstruct_projection = nn.Linear(self.decoder_embed_dim, self.in_channels * self.patch_size**2)
-        
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.lpips_loss_fn = lpips.LPIPS(net='alex').eval().to(device)
-        self.loss_weighting = loss_weighting
+        self.prepare_decoder_in = PrepareDecoderInput(
+            total_patches=self.total_patches, 
+            encoder_embed_dim=encoder_embed_dim,
+            decoder_embed_dim=decoder_embed_dim,
+        )
+        self.decoder = Decoder(
+            embed_dim=decoder_embed_dim, num_heads=decoder_num_heads
+        )
+        self.output_projection = nn.Linear(decoder_embed_dim, in_channels * patch_size ** 2)
+        self.reconstructed_1, self.reconstructed_2 = None, None
     
-    def forward(self, x):
-        x = self.patch_embed.forward(x)  # Get decoder outputs for masked tokens
-        cos_sim = torch.nn.functional.cosine_similarity(
-            x[:, :, None, :], x[:, None, :, :], dim=-1
-        )
-        mean_sim = cos_sim.mean().item()
-        print(f"Cos sim after patch embed: {mean_sim:.20f}")
+    def get_reconstructed_imgs(self, x: Tensor):
+        """
+        Args:
+            x (Tensor): Output of the decoder with shape of
+                        (batch_size, num_patches_both_views, decoder_embed_dim)
+        Returns:
+            img1, img2: (Tensor), (Tensor) both of shape (batch_size, in_channels, img_size, img_size), 
+                        the correct format for rgb images
+        """
+        x = torch.sigmoid(self.output_projection(x)) # Normalizes output between (0, 1)
         
-        for encoder_block in self.encoder:
-            x = encoder_block(x)
-            
-        cos_sim = torch.nn.functional.cosine_similarity(
-            x[:, :, None, :], x[:, None, :, :], dim=-1
-        )
-        mean_sim = cos_sim.mean().item()
-        print(f"Cos sim after encoder: {mean_sim:.20f}")
+        batch_size, patches_both_imgs, _ = x.shape
+        patches_per_img = patches_both_imgs // 2
+        grid_size = self.img_size // self.patch_size
         
+        decoded_view1 = x[:, :patches_per_img, :]
+        decoded_view1 = decoded_view1.reshape(
+            batch_size, grid_size, grid_size, self.patch_size, 
+            self.patch_size, self.in_channels)
+        img1 = decoded_view1.permute(0, 5, 1, 3, 2, 4)
+        img1 = img1.reshape(batch_size, self.in_channels, self.img_size, self.img_size)
         
-        x = self.prepare_decoder_in.forward(x)
-        cos_sim = torch.nn.functional.cosine_similarity(
-            x[:, :, None, :], x[:, None, :, :], dim=-1
-        )
-        mean_sim = cos_sim.mean().item()
-        print(f"Cos sim after prepare decoder in: {mean_sim:.20f}")
+        decoded_view2 = x[:, patches_per_img:, :]
+        decoded_view2 = decoded_view2.reshape(
+            batch_size, grid_size, grid_size, self.patch_size, 
+            self.patch_size, self.in_channels)
+        img2 = decoded_view2.permute(0, 5, 1, 3, 2, 4)
+        img2 = img2.reshape(batch_size, self.in_channels, self.img_size, self.img_size)
         
-        
-        for decoder_block in self.decoder:
-            x = decoder_block(x)
-
-        a = x[:, self.num_patches:, :]
-        cos_sim = torch.nn.functional.cosine_similarity(
-            a[:, :, None, :], a[:, None, :, :], dim=-1
-        )
-        mean_sim = cos_sim.mean().item()
-        print(f"Cos sim after decoder: {mean_sim:.20f}")
-        
-        # shape = (batch_size, num_patches(both images), vector dimension of each patch embed)
-        x = self.reconstruct_projection(x[:, self.num_patches:, :]) # shape = (batch_size, num_patches(decoded image), num_pixels in each patch * channels)
-        
-        
-        return x 
+        return img1, img2
     
-    def get_loss(self, x, original_img, show = False):
-        grid_size = self.img_size // self.patch_size # Num of patches along one dimension
-        
-        current_batch_size = x.shape[0]
-        reconstructed = x.view(current_batch_size, grid_size, grid_size, self.patch_size, self.patch_size, self.in_channels)
-        reconstructed = reconstructed.permute(0, 5, 1, 3, 2, 4).contiguous()
-        reconstructed = reconstructed.view(current_batch_size, self.in_channels, self.img_size, self.img_size)
-        
-        if show:
-            # Convert from (C, H, W) to (H, W, C), scale to 0–255, and convert to uint8
-            rec_img = reconstructed[0].permute(1, 2, 0).cpu().numpy()
-            gt_img = original_img[0].permute(1, 2, 0).cpu().numpy()
+    def get_loss(self, decoder_output):
+        """
+        Calculate MSE loss and perceptual loss (ssim) of both reconstructed views, 
+        with a final loss being the average of their losses
 
-            rec_img = (rec_img * 255).clip(0, 255).astype(np.uint8)
-            gt_img = (gt_img * 255).clip(0, 255).astype(np.uint8)
-
-            combined = np.hstack((gt_img, rec_img))
-            cv2.imshow("Ground Truth (Left) | Reconstructed (Right)", combined)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
+        Args:
+            decoder_output (Tensor):    (batch, num_patches_both_views, decoder_embed_dim), 
+                                        which gets passed through self.get_reconstructed_imgs
+        Returns:
+            total_loss (int): Total loss, comprised of an equal weighting of MSE and SSIM loss
+        """
+        self.reconstructed_1, self.reconstructed_2 = self.get_reconstructed_imgs(decoder_output)
+        ref_partial_view, ref_masked_view = self.prepare_encoder_in.get_views() # (batch, in_channels, img_size, img_size)
         
-        # Calculated MSE loss per pixel
-        mse_loss = torch.clamp(F.mse_loss(reconstructed, original_img), min=0.0)
+        # MSE loss per pixel
+        mse_loss1 = torch.clamp(F.mse_loss(self.reconstructed_1, ref_partial_view), min=0.0).item()
+        mse_loss2 = torch.clamp(F.mse_loss(self.reconstructed_2, ref_masked_view), min=0.0).item()
+        mse_loss = round((mse_loss1 + mse_loss2) / 2, 4)
+        
         # Calculate SSIM perceptual loss
-        ssim_loss = 1 - torch.clamp(ssim(reconstructed, original_img, data_range=1.0), min=0.0)
-        # LPIP perceptual loss
-        reconstructed_lpips = 2 * reconstructed - 1 # normalize to [-1, 1]
-        original_lpips = 2 * original_img - 1
-        lpips_loss = self.lpips_loss_fn(reconstructed_lpips, original_lpips).mean()
-        lpips_loss = torch.clamp(lpips_loss, min=0.0)
+        ssim_loss1 = 1 - torch.clamp(ssim(self.reconstructed_1, ref_partial_view, data_range=1.0), min=0.0).item()
+        ssim_loss2 = 1 - torch.clamp(ssim(self.reconstructed_2, ref_masked_view, data_range=1.0), min=0.0).item()
+        ssim_loss = round((ssim_loss1 + ssim_loss2) / 2, 4)
         
-        return self.loss_weighting[0] * ssim_loss + self.loss_weighting[1] * lpips_loss + self.loss_weighting[2] * mse_loss
+        total_loss = 0.5 * mse_loss + 0.5 * ssim_loss
+        return total_loss
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--weights", type=str, required=True)
-    args = parser.parse_args()
+    def render_reconstructed(self):
+        """
+        Renders the reconstructed partial and masked views, taking only 
+        the first pair in the batch.
+        """
+        package = zip([self.reconstructed_1, self.reconstructed_2], 
+                      ["Reconstructed Partial View", "Reconstructed Masked View"])
+        for i, (img, title) in enumerate(package):
+            plt.subplot(1, 2, i + 1)
+            plt.imshow(img[0].permute(1, 2, 0).cpu().detach().numpy())
+            plt.title(title)
+            plt.axis("off")
+            
+        plt.tight_layout()
+        plt.show()
     
-    left_image_path = os.path.join(os.getcwd(), 'Dataset', 'Val', 'LeftCam', 'left_20.png')
-    left_img = Image.open(left_image_path).convert("RGB")
-    right_image_path = os.path.join(os.getcwd(), 'Dataset', 'Val', 'RightCam', 'right_20.png')
-    right_img = Image.open(right_image_path).convert("RGB")
+    def forward(self, x1: Tensor, x2: Tensor):
+        """
+        Full model architecture 
+        Args:
+            x1 (Tensor): First view (batch, in_channels, img_size, img_size)
+            x2 (Tensor): Second view (same shape as x1)
 
-    img_size = 128
-    transform = transforms.Compose([
-        transforms.Resize((img_size, img_size)),
-        transforms.ToTensor(),
-    ])
-    
-    visible_tensor = transform(left_img).unsqueeze(0) # (batch, channels, img_size, img_size)
-    masked_tensor = transform(right_img).unsqueeze(0) 
-
-    model = Model(
-        img_size=128,
-        patch_size=8,
-        in_channels=3,
-        encoder_embed_dim=384,
-        encoder_num_heads=6,
-        decoder_embed_dim=256,
-        decoder_num_heads=4,
-        loss_weighting=(0.5, 1.5),
-    )
-    
-    model.eval()
-    map_location = "cuda" if torch.cuda.is_available() else "cpu"
-    state_dict = torch.load(os.path.join('Results', args.weights), map_location=map_location, weights_only=True)
-    model.load_state_dict(state_dict)
-    
-    with torch.no_grad():
-        decoder_output = model(visible_tensor)
-        loss = model.get_loss(decoder_output, masked_tensor, show=True)
-        print("Loss:", loss.item())
-
+        Returns:
+            (Tensor): Output of decoder (batch, num_patches_both_views, decoder_embed_dim)
+        """
+        x = self.prepare_encoder_in(x1, x2)
+        x = self.encoder(x)
+        x = self.prepare_decoder_in(x, 
+            self.prepare_encoder_in.visible_ids, 
+            self.prepare_encoder_in.partial_view_id
+        )
+        x = self.decoder(x)
+        return x 
         
-
-    

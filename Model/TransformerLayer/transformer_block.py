@@ -26,21 +26,28 @@ class TransformerBlock(nn.Module):
         x = x + self.self_attention(x)
         x = x + self.mlp(x)
         return x
-
 class Encoder(nn.Module):
     def __init__(self, embed_dim, num_heads):
+        super().__init__()
+        
         self.encoder = nn.ModuleList([
             TransformerBlock(embed_dim, num_heads) 
         for _ in range(12)])
         
     def forward(self, x):
-        return self.encoder(x)
+        for block in self.encoder:
+            x = block(x)
+        return x
     
 class Decoder(nn.Module):
     def __init__(self, embed_dim, num_heads):
+        super().__init__()
+        
         self.decoder = nn.ModuleList([
             TransformerBlock(embed_dim, num_heads) 
         for _ in range(8)])
         
     def forward(self, x):
-        return self.decoder(x)
+        for block in self.decoder:
+            x = block(x)
+        return x
