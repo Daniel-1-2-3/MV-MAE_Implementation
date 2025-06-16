@@ -3,8 +3,8 @@ from torch import nn
 from torch import Tensor
 import math, random
 
-class PatchEmbedding(nn.Module):
-    def __init__ (self, in_channels, img_size, patch_size, embed_dim, training=True):
+class PrepareEncoderInput(nn.Module):
+    def __init__ (self, in_channels, total_patches, embed_dim, training=True):
         """
         Each view is passed through a series of 4 convolutional layers (with shared weights across views) 
         to extract patch embeddings. Fixed sine/cosine positional embeddings are then added to each patch 
@@ -21,7 +21,6 @@ class PatchEmbedding(nn.Module):
         super().__init__()
         
         self.training = training
-        total_patches = int((img_size / patch_size) ** 2)
         self.patch_extract = nn.Sequential(
             nn.Conv2d(in_channels, embed_dim//4, kernel_size=3, stride=1, padding=1), nn.ReLU(),
             nn.Conv2d(embed_dim//4, embed_dim//4*2, kernel_size=3, stride=1, padding=1), nn.ReLU(),
@@ -32,7 +31,8 @@ class PatchEmbedding(nn.Module):
         self.positional_embeds = self.sin_cos_embed(int(math.sqrt(total_patches)), embed_dim)
         self.view1_embed = nn.Parameter(torch.zeros(1, 1, embed_dim), requires_grad=False)
         self.view2_embed = nn.Parameter(torch.ones(1, 1, embed_dim), requires_grad=False)
-        self.masked_ids = None
+        self.visible_ids = None
+        self.partial_view_id = None
     
     def sin_cos_embed(self, grid_size, embed_dim):
         """
@@ -77,7 +77,7 @@ class PatchEmbedding(nn.Module):
         scores = torch.rand(batch, total_patches, device=x.device) # Random score for each token
         ids_sorted = torch.argsort(scores, dim=1)
         ids_keep = ids_sorted[:, :num_keep]
-        self.masked_ids = ids_keep
+        self.visible_ids = ids_keep # (batch, num_visible)
 
         x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).expand(-1, -1, embed_dim)) # (batch, kept_patches, embed_dim)
         return x_masked
@@ -105,6 +105,7 @@ class PatchEmbedding(nn.Module):
         x = torch.cat((x1, x2), dim=1)
         if self.training:
             partial_mask = random.choice([x1, x2]) # Other is fully masked
+            self.partial_view_id = 0 if partial_mask == x1 else 1
             x = self.random_mask(partial_mask, 0.25)
 
         return x

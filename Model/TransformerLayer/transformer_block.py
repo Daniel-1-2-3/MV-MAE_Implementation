@@ -35,3 +35,12 @@ class Encoder(nn.Module):
         
     def forward(self, x):
         return self.encoder(x)
+    
+class Decoder(nn.Module):
+    def __init__(self, embed_dim, num_heads):
+        self.decoder = nn.ModuleList([
+            TransformerBlock(embed_dim, num_heads) 
+        for _ in range(8)])
+        
+    def forward(self, x):
+        return self.decoder(x)
