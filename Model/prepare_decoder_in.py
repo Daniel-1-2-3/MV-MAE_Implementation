@@ -49,20 +49,20 @@ class PrepareDecoderInput(nn.Module):
         batch_size = x.shape[0]
         x = self.change_dim(x)
         
-        partial_view_mask_tokens = self.partial_view_mask_tokens.expand(batch_size, -1, -1)
-        partial_view = partial_view_mask_tokens.scatter(1, visible_ids.unsqueeze(-1).expand(-1, -1, self.decoder_embed_dim), x)
-        masked_view = self.masked_view_mask_tokens.expand(batch_size, -1, -1)
+        partial_view_mask_tokens = self.partial_view_mask_tokens.expand(batch_size, -1, -1).to(x.device)
+        partial_view = partial_view_mask_tokens.scatter(1, visible_ids.unsqueeze(-1).expand(-1, -1, self.decoder_embed_dim), x).to(x.device)
+        masked_view = self.masked_view_mask_tokens.expand(batch_size, -1, -1).to(x.device)
         
         if partial_view_id == 0:
-            partial_view += self.view1_embed
-            masked_view += self.view2_embed
+            partial_view = partial_view + self.view1_embed.to(x.device)
+            masked_view = masked_view + self.view2_embed.to(x.device)
         else:
-            partial_view += self.view2_embed
-            masked_view += self.view1_embed
+            partial_view = partial_view + self.view2_embed.to(x.device)
+            masked_view = masked_view + self.view1_embed.to(x.device)
             
         x = torch.cat([partial_view, masked_view], dim=1)
         
-        learnable_pos_embeds = self.learnable_pos_embeds.expand(batch_size, -1, -1)
-        x += learnable_pos_embeds
+        learnable_pos_embeds = self.learnable_pos_embeds.expand(batch_size, -1, -1).to(x.device)
+        x = x + learnable_pos_embeds
         
         return x

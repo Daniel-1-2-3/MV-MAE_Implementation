@@ -22,10 +22,8 @@ class PrepareEncoderInput(nn.Module):
         
         self.training = training
         self.patch_extract = nn.Sequential(
-            nn.Conv2d(in_channels, embed_dim//4, kernel_size=3, stride=1, padding=1), nn.ReLU(),
-            nn.Conv2d(embed_dim//4, embed_dim//4*2, kernel_size=3, stride=1, padding=1), nn.ReLU(),
-            nn.Conv2d(embed_dim//4*2, embed_dim//4*3, kernel_size=3, stride=1, padding=1), nn.ReLU(),
-            nn.Conv2d(embed_dim//4*3, embed_dim, kernel_size=3, stride=1, padding=1), nn.ReLU(),
+            nn.Conv2d(in_channels, embed_dim//2, kernel_size=3, stride=1, padding=1), nn.ReLU(),
+            nn.Conv2d(embed_dim//2, embed_dim, kernel_size=3, stride=1, padding=1), nn.ReLU(),
             nn.AdaptiveAvgPool2d((int(math.sqrt(total_patches)), int(math.sqrt(total_patches))))
         ) # (batch, embed_dim, sqrt(total_patches), sqrt(total_patches))
         
@@ -71,7 +69,7 @@ class PrepareEncoderInput(nn.Module):
         pos_embed = torch.cat([pos_x, pos_y], dim=1) # (num_patches, embed_dim)
         return pos_embed
 
-    def random_mask(self, x, mask_ratio):
+    def random_mask(self, x: Tensor, mask_ratio):
         batch, total_patches, embed_dim = x.shape
         num_keep = int(total_patches * (1 - mask_ratio))
 
@@ -98,12 +96,12 @@ class PrepareEncoderInput(nn.Module):
         x1 = self.patch_extract(x1)
         x1 = x1.flatten(2, 3)
         x1 = x1.transpose(1, 2) # (batch, total_patches, embed_dim)
-        x1 += self.positional_embeds.unsqueeze(0) + self.view1_embed
+        x1 = x1 + self.positional_embeds.unsqueeze(0).to(x1.device) + self.view1_embed.to(x1.device)
         
         x2 = self.patch_extract(x2)
         x2 = x2.flatten(2, 3)
         x2 = x2.transpose(1, 2)
-        x2 += self.positional_embeds.unsqueeze(0) + self.view2_embed
+        x2 = x2 + self.positional_embeds.unsqueeze(0).to(x2.device) + self.view2_embed.to(x2.device)
         
         x = torch.cat((x1, x2), dim=1)
         if self.training:
