@@ -1,9 +1,6 @@
 from Model.model import Model
 
 import torch
-from torch import nn, Tensor
-import torch.nn.functional as F
-from pytorch_msssim import ssim
 from PIL import Image
 from torchvision import transforms
 import os
@@ -24,11 +21,11 @@ if __name__ == "__main__":
     x1 = transform(left_img).unsqueeze(0) # (batch, channels, img_size, img_size)
     x2 = transform(right_img).unsqueeze(0) 
 
-    model = Model()
+    model = Model(training=False)
     
     with torch.no_grad():
         decoder_output = model(x1, x2)
         loss = model.get_loss(decoder_output)
-        print("Loss:", loss)
+        print("Loss:", loss.item())
     
     model.render_reconstructed()

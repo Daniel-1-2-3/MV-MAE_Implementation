@@ -83,14 +83,14 @@ class Model(nn.Module):
         ref_partial_view, ref_masked_view = self.prepare_encoder_in.get_views() # (batch, in_channels, img_size, img_size)
         
         # MSE loss per pixel
-        mse_loss1 = torch.clamp(F.mse_loss(self.reconstructed_1, ref_partial_view), min=0.0).item()
-        mse_loss2 = torch.clamp(F.mse_loss(self.reconstructed_2, ref_masked_view), min=0.0).item()
-        mse_loss = round((mse_loss1 + mse_loss2) / 2, 4)
+        mse_loss1 = torch.clamp(F.mse_loss(self.reconstructed_1, ref_partial_view), min=0.0)
+        mse_loss2 = torch.clamp(F.mse_loss(self.reconstructed_2, ref_masked_view), min=0.0)
+        mse_loss = (mse_loss1 + mse_loss2) / 2
         
         # Calculate SSIM perceptual loss
-        ssim_loss1 = 1 - torch.clamp(ssim(self.reconstructed_1, ref_partial_view, data_range=1.0), min=0.0).item()
-        ssim_loss2 = 1 - torch.clamp(ssim(self.reconstructed_2, ref_masked_view, data_range=1.0), min=0.0).item()
-        ssim_loss = round((ssim_loss1 + ssim_loss2) / 2, 4)
+        ssim_loss1 = 1 - torch.clamp(ssim(self.reconstructed_1, ref_partial_view, data_range=1.0), min=0.0)
+        ssim_loss2 = 1 - torch.clamp(ssim(self.reconstructed_2, ref_masked_view, data_range=1.0), min=0.0)
+        ssim_loss = (ssim_loss1 + ssim_loss2) / 2
         
         total_loss = 0.5 * mse_loss + 0.5 * ssim_loss
         return total_loss

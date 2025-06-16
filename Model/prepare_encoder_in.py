@@ -28,6 +28,7 @@ class PrepareEncoderInput(nn.Module):
             nn.Conv2d(embed_dim//4*3, embed_dim, kernel_size=3, stride=1, padding=1), nn.ReLU(),
             nn.AdaptiveAvgPool2d((int(math.sqrt(total_patches)), int(math.sqrt(total_patches))))
         ) # (batch, embed_dim, sqrt(total_patches), sqrt(total_patches))
+        
         self.positional_embeds = self.sin_cos_embed(int(math.sqrt(total_patches)), embed_dim)
         self.view1_embed = nn.Parameter(torch.zeros(1, 1, embed_dim), requires_grad=False)
         self.view2_embed = nn.Parameter(torch.ones(1, 1, embed_dim), requires_grad=False)
