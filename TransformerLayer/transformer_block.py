@@ -1,6 +1,6 @@
 import torch.nn as nn
-from Script_TransformerLayer.mlp_layer import FeedForward
-from Script_TransformerLayer.self_attention_layer import MultiHeadSelfAttention
+from TransformerLayer.mlp_layer import FeedForward
+from TransformerLayer.self_attention_layer import MultiHeadSelfAttention
 
 class TransformerBlock(nn.Module):
     def __init__(self, embedding_dim, num_heads):

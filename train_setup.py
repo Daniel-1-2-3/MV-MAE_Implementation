@@ -8,7 +8,7 @@ import os
 import argparse
 
 from model import Model
-from Script_CreateDataset.dataset import StereoImageDataset
+from CreateDataset.dataset import StereoImageDataset
 
 class Train():
     def __init__(self, img_size, patch_size, batch_size, in_channels,
