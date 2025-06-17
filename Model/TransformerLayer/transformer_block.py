@@ -15,8 +15,8 @@ class TransformerBlock(nn.Module):
     
     def forward(self, x):
         """
-        Implements self attention layers and feed forward
-        layers with residuals in the transformer block.
+        Implements residual connections between self attention layers and feed forward
+        layers in the transformer block.
 
         Args:
             x (Tensor): Input tensor of shape (batch_size, num_patches, embedding_dim)
@@ -46,10 +46,8 @@ class Decoder(nn.Module):
         self.decoder = nn.ModuleList([
             TransformerBlock(embed_dim, num_heads) 
         for _ in range(12)])
-        self.final_norm = nn.LayerNorm(embed_dim)
         
     def forward(self, x):
         for block in self.decoder:
             x = block(x)
-        x = self.final_norm(x)
         return x
