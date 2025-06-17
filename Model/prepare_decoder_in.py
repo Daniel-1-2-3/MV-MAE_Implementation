@@ -17,11 +17,11 @@ class PrepareDecoderInput(nn.Module):
         self.change_dim = nn.Linear(encoder_embed_dim, decoder_embed_dim)
         
         self.partial_view_mask_tokens = nn.Parameter(
-            torch.randn(1, total_patches, decoder_embed_dim))
+            torch.randn(1, total_patches, decoder_embed_dim) * 0.1)
         self.masked_view_mask_tokens = nn.Parameter(
-            torch.randn(1, total_patches, decoder_embed_dim))
+            torch.randn(1, total_patches, decoder_embed_dim) * 0.1)
         self.learnable_pos_embeds = nn.Parameter(
-            torch.randn(1, 2 * total_patches, decoder_embed_dim))
+            torch.randn(1, 2 * total_patches, decoder_embed_dim) * 0.1)
         
         self.view1_embed = nn.Parameter(torch.zeros(1, 1, decoder_embed_dim), requires_grad=False)
         self.view2_embed = nn.Parameter(torch.ones(1, 1, decoder_embed_dim), requires_grad=False)

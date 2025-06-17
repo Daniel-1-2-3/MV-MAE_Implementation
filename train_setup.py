@@ -21,7 +21,8 @@ class Trainer():
         
         self.transform = transforms.Compose([
             transforms.Resize((img_size, img_size)),
-            transforms.ToTensor()])
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5]*3, std=[0.5]*3)]) # Maps (0, 1.0) to (-1, 1), making patch embeds more significant compared to mask tokens
         
         print("Loading dataset...")
         train_dir, val_dir = os.path.join(base_dataset_dir, 'Train'), os.path.join(base_dataset_dir, 'Val')
