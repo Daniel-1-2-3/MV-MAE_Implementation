@@ -35,7 +35,7 @@ class Model(nn.Module):
             embed_dim=decoder_embed_dim, num_heads=decoder_num_heads
         )
         self.output_projection = nn.Linear(decoder_embed_dim, in_channels * patch_size ** 2)
-        self.reconstructed_1, self.reconstructed_2 = None, None
+        self.reconstructed = None
     
     def get_reconstructed_imgs(self, x: Tensor):
         """
@@ -43,30 +43,26 @@ class Model(nn.Module):
             x (Tensor): Output of the decoder with shape of
                         (batch_size, num_patches_both_views, decoder_embed_dim)
         Returns:
-            img1, img2: (Tensor), (Tensor) both of shape (batch_size, in_channels, img_size, img_size), 
+            img: (Tensor) both of shape (batch_size, in_channels, img_size, img_size), 
                         the correct format for rgb images
         """
-        x = torch.sigmoid(self.output_projection(x)) # Normalizes output between (0, 1)
+        x = torch.tanh(self.output_projection(x)) * 0.5 + 0.5
         
         batch_size, patches_both_imgs, _ = x.shape
         patches_per_img = patches_both_imgs // 2
         grid_size = self.img_size // self.patch_size
         
-        decoded_view1 = x[:, :patches_per_img, :]
-        decoded_view1 = decoded_view1.reshape(
+        decoded_view = x[:, patches_per_img:, :]
+        decoded_view = decoded_view.reshape(
             batch_size, grid_size, grid_size, self.patch_size, 
             self.patch_size, self.in_channels)
-        img1 = decoded_view1.permute(0, 5, 1, 3, 2, 4)
-        img1 = img1.reshape(batch_size, self.in_channels, self.img_size, self.img_size)
+        img = decoded_view.permute(0, 5, 1, 3, 2, 4)
+        img = img.reshape(batch_size, self.in_channels, self.img_size, self.img_size)
+        img = img.clamp(0.0, 1.0)
         
-        decoded_view2 = x[:, patches_per_img:, :]
-        decoded_view2 = decoded_view2.reshape(
-            batch_size, grid_size, grid_size, self.patch_size, 
-            self.patch_size, self.in_channels)
-        img2 = decoded_view2.permute(0, 5, 1, 3, 2, 4)
-        img2 = img2.reshape(batch_size, self.in_channels, self.img_size, self.img_size)
+        print("Clamped img:", img.min().item(), img.max().item())
         
-        return img1, img2
+        return img
     
     def get_loss(self, decoder_output):
         """
@@ -79,38 +75,29 @@ class Model(nn.Module):
         Returns:
             total_loss (int): Total loss, comprised of an equal weighting of MSE and SSIM loss
         """
-        self.reconstructed_1, self.reconstructed_2 = self.get_reconstructed_imgs(decoder_output)
+        self.reconstructed = self.get_reconstructed_imgs(decoder_output)
         ref_partial_view, ref_masked_view = self.prepare_encoder_in.get_views() # (batch, in_channels, img_size, img_size)
         
         # MSE loss per pixel
-        mse_loss1 = torch.clamp(F.mse_loss(self.reconstructed_1, ref_partial_view), min=0.0)
-        mse_loss2 = torch.clamp(F.mse_loss(self.reconstructed_2, ref_masked_view), min=0.0)
-        mse_loss = (mse_loss1 + mse_loss2) / 2
+        mse_loss = torch.clamp(F.mse_loss(self.reconstructed, ref_masked_view), min=0.0)
         
         # Calculate SSIM perceptual loss
-        ssim_loss1 = 1 - torch.clamp(ssim(self.reconstructed_1, ref_partial_view, data_range=1.0), min=0.0)
-        ssim_loss2 = 1 - torch.clamp(ssim(self.reconstructed_2, ref_masked_view, data_range=1.0), min=0.0)
-        ssim_loss = (ssim_loss1 + ssim_loss2) / 2
+        ssim_loss = 1 - torch.clamp(ssim(self.reconstructed, ref_masked_view, data_range=1.0), min=0.0)
         
         total_loss = 0.5 * mse_loss + 0.5 * ssim_loss
-        return total_loss
+        return mse_loss
 
     def render_reconstructed(self):
         """
-        Renders the reconstructed partial and masked views, taking only 
-        the first pair in the batch.
+        Renders the reconstructed masked view, taking only 
+        the first in the batch.
         """
-        package = zip([self.reconstructed_1, self.reconstructed_2], 
-                      ["Reconstructed Partial View", "Reconstructed Masked View"])
-        for i, (img, title) in enumerate(package):
-            plt.subplot(1, 2, i + 1)
-            plt.imshow(img[0].permute(1, 2, 0).cpu().detach().numpy())
-            plt.title(title)
-            plt.axis("off")
-            
+        plt.imshow(self.reconstructed[0].permute(1, 2, 0).cpu().detach().numpy())
+        plt.title("Reconstructed Masked View")
+        plt.axis("off")
         plt.tight_layout()
         plt.show()
-    
+
     def forward(self, x1: Tensor, x2: Tensor):
         """
         Full model architecture 
@@ -127,7 +114,7 @@ class Model(nn.Module):
             self.prepare_encoder_in.visible_ids, 
             self.prepare_encoder_in.partial_view_id
         )
-        print('std', torch.std(x, dim=1))
         x = self.decoder(x)
+        print("Decoder output stats:", x.mean().item(), x.std().item())
         return x 
         

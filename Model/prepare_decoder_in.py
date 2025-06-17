@@ -1,5 +1,6 @@
 import torch
 from torch import Tensor, nn
+import torch.nn.functional as F
 
 class PrepareDecoderInput(nn.Module):
     def __init__(self, total_patches, encoder_embed_dim, decoder_embed_dim):
@@ -13,21 +14,27 @@ class PrepareDecoderInput(nn.Module):
         """
         super().__init__()
         
+        self.total_patches = total_patches
         self.decoder_embed_dim = decoder_embed_dim
         self.change_dim = nn.Linear(encoder_embed_dim, decoder_embed_dim)
         
         self.partial_view_mask_tokens = nn.Parameter(
             torch.randn(1, total_patches, decoder_embed_dim))
-        self.masked_view_mask_tokens = nn.Parameter(
+        torch.nn.init.normal_(self.partial_view_mask_tokens, std=0.02)
+        
+        self.masked_view_token = nn.Parameter(
             torch.randn(1, total_patches, decoder_embed_dim))
+        torch.nn.init.trunc_normal_(self.masked_view_token, std=0.02)
+        
         self.learnable_pos_embeds = nn.Parameter(
             torch.randn(1, 2 * total_patches, decoder_embed_dim))
+        torch.nn.init.trunc_normal_(self.learnable_pos_embeds, std=0.02)
         
-        self.view1_embed = nn.Parameter(torch.zeros(1, 1, decoder_embed_dim), requires_grad=False)
-        self.view2_embed = nn.Parameter(torch.ones(1, 1, decoder_embed_dim), requires_grad=False)
+        self.view1_embed = nn.Parameter(torch.randn(1, 1, decoder_embed_dim))  # requires_grad=True by default
+        self.view2_embed = nn.Parameter(torch.randn(1, 1, decoder_embed_dim))
+        torch.nn.init.trunc_normal_(self.view1_embed, std=0.02)
+        torch.nn.init.trunc_normal_(self.view2_embed, std=0.02)
         
-        self.norm = nn.LayerNorm(decoder_embed_dim)
-    
     def forward(self, x: Tensor, visible_ids: Tensor, partial_view_id):
         """
         This layer prepares the encoder's output for input into the decoder. Learnable
@@ -50,11 +57,14 @@ class PrepareDecoderInput(nn.Module):
         
         batch_size = x.shape[0]
         x = self.change_dim(x)
-        
+        x = F.layer_norm(x, (self.decoder_embed_dim,))
+
         partial_view_mask_tokens = self.partial_view_mask_tokens.expand(batch_size, -1, -1).to(x.device)
         partial_view = partial_view_mask_tokens.scatter(1, visible_ids.unsqueeze(-1).expand(-1, -1, self.decoder_embed_dim), x).to(x.device)
-        masked_view = self.masked_view_mask_tokens.expand(batch_size, -1, -1).to(x.device)
         
+        masked_view = self.masked_view_token.expand(batch_size, -1, -1).to(x.device)
+        masked_view = F.layer_norm(masked_view, (self.decoder_embed_dim,))
+
         if partial_view_id == 0:
             partial_view = partial_view + self.view1_embed.to(x.device).clone()
             masked_view = masked_view + self.view2_embed.to(x.device).clone()
@@ -65,7 +75,5 @@ class PrepareDecoderInput(nn.Module):
         x = torch.cat([partial_view, masked_view], dim=1)
         
         learnable_pos_embeds = self.learnable_pos_embeds.expand(batch_size, -1, -1).to(x.device)
-        x = x + 0.1 * learnable_pos_embeds
-        x = self.norm(x)
-        
+        x = x + learnable_pos_embeds
         return x
