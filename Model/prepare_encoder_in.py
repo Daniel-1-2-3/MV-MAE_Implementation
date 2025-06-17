@@ -8,7 +8,7 @@ class PrepareEncoderInput(nn.Module):
         """
         Each view is passed through a series of 4 convolutional layers (with shared weights across views) 
         to extract patch embeddings. Fixed sine/cosine positional embeddings are then added to each patch 
-        to encode spatial information. Learnable view embeddings are also added. 
+        to encode spatial information. View embeddings are also added. 
 
         Args:
             in_channels (int):  Typically 3 for RGB input
@@ -21,18 +21,20 @@ class PrepareEncoderInput(nn.Module):
         super().__init__()
         
         self.total_patches = total_patches
+        self.embed_dim = embed_dim
         self.training = training
         self.patch_extract = nn.Sequential(
-            nn.Conv2d(in_channels, embed_dim//2, kernel_size=3, stride=1, padding=1), nn.LeakyReLU(),
-            nn.Conv2d(embed_dim//2, embed_dim, kernel_size=3, stride=1, padding=1), nn.LeakyReLU(),
+            nn.Conv2d(in_channels, embed_dim//2, kernel_size=3, stride=1, padding=1), nn.ReLU(),
+            nn.Conv2d(embed_dim//2, embed_dim, kernel_size=3, stride=1, padding=1), nn.ReLU(),
             nn.AdaptiveAvgPool2d((int(math.sqrt(total_patches)), int(math.sqrt(total_patches))))
         ) # (batch, embed_dim, sqrt(total_patches), sqrt(total_patches))
         
-        self.positional_embeds = self.sin_cos_embed(int(math.sqrt(total_patches)), embed_dim)
-        self.view1_embed = nn.Parameter(torch.randn(1, 1, embed_dim))
-        self.view2_embed = nn.Parameter(torch.randn(1, 1, embed_dim))
-        self.partial_view1, self.partial_view2 = None, None
-        self.visible_ids = None
+        self.register_buffer("positional_embeds", 
+            self.sin_cos_embed(int(math.sqrt(self.total_patches)), self.embed_dim)
+        )   
+         
+        self.masked_ids = None
+        self.partial_view, self.masked_view = None, None
     
     def sin_cos_embed(self, grid_size, embed_dim):
         """
@@ -73,12 +75,14 @@ class PrepareEncoderInput(nn.Module):
         batch, total_patches, embed_dim = x.shape
         num_keep = int(total_patches * (1 - mask_ratio))
 
-        scores = torch.rand(batch, total_patches, device=x.device) # Random score for each token
+        scores = torch.rand(batch, total_patches, device=x.device)
         ids_sorted = torch.argsort(scores, dim=1)
-        ids_keep = ids_sorted[:, :num_keep]
+        ids_keep = ids_sorted[:, :num_keep]     
+        ids_masked = ids_sorted[:, num_keep:] 
 
-        x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).expand(-1, -1, embed_dim)) # (batch, kept_patches, embed_dim)
-        return x_masked, ids_keep
+        x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).expand(-1, -1, embed_dim))  # (B, kept, D)
+        return x_masked, ids_masked
+
 
     def forward(self, x1: Tensor, x2: Tensor):
         """
@@ -95,30 +99,32 @@ class PrepareEncoderInput(nn.Module):
         x1 = self.patch_extract(x1)
         x1 = x1.flatten(2, 3)
         x1 = x1.transpose(1, 2) # (batch, total_patches, embed_dim)
-        x1 = x1 + self.positional_embeds.unsqueeze(0).to(x1.device) + self.view1_embed.to(x1.device)
+        x1 = x1 + self.positional_embeds.unsqueeze(0).to(x1.device)
         
         x2 = self.patch_extract(x2)
         x2 = x2.flatten(2, 3)
         x2 = x2.transpose(1, 2)
-        x2 = x2 + self.positional_embeds.unsqueeze(0).to(x2.device) + self.view2_embed.to(x2.device)
+        x2 = x2 + self.positional_embeds.unsqueeze(0).to(x2.device)
         
-        x = torch.cat((x1, x2), dim=1)
+        x = None
         if self.training:
             if random.random() < 0.5:
-                self.partial_view1 = x1_clone
-                self.partial_view2 = x2_clone
+                self.partial_view = x1_clone
+                self.masked_view = x2_clone
+                
+                x, self.masked_ids = self.random_mask(x1, 0.25)
+                full_masked_ids = torch.arange(self.total_patches, 2 * self.total_patches, device=x.device)
+                self.masked_ids = torch.cat([self.masked_ids, full_masked_ids.unsqueeze(0).expand(x.size(0), -1)], dim=1)
             else:
-                self.partial_view1 = x2_clone
-                self.partial_view2 = x1_clone
-         
-            x1, visible_ids1 = self.random_mask(x1, 0.5)
-            x2, visible_ids2 = self.random_mask(x2, 0.5)
-            visible_ids2 = visible_ids2 + self.total_patches
-            
-            self.visible_ids = torch.cat([visible_ids1, visible_ids2], dim=1)
-            x = torch.cat([x1, x2], dim=1)
-
+                self.partial_view = x2_clone
+                self.masked_view = x1_clone
+                x, self.masked_ids = self.random_mask(x2, 0.25)
+                full_masked_ids = torch.arange(0, self.total_patches, device=x.device)
+                self.masked_ids = torch.cat([self.masked_ids + self.total_patches, full_masked_ids.unsqueeze(0).expand(x.size(0), -1)], dim=1)
+        else:
+            x = torch.cat((x1, x2), dim=1)
+        
         return x
     
     def get_views(self):
-        return self.partial_view1, self.partial_view2
+        return self.partial_view, self.masked_view

@@ -37,23 +37,54 @@ class Model(nn.Module):
         self.output_projection = nn.Linear(decoder_embed_dim, in_channels * patch_size ** 2)
         self.reconstructed_1, self.reconstructed_2 = None, None
     
+    def get_loss(self, x: Tensor):
+        """
+            Calculate MSE loss of reconstructed patches in both views.
+
+            Args:
+                decoder_output (Tensor):    (batch, num_patches_both_views, decoder_embed_dim), 
+                                            which gets passed through self.get_reconstructed_imgs
+            Returns:
+                total_loss (int): Total loss, comprised of an equal weighting of MSE and SSIM loss
+        """
+        x = torch.sigmoid(self.output_projection(x))
+        
+        batch_size, _, _ = x.shape
+        grid_size = self.img_size // self.patch_size
+        
+        ref_partial_view, ref_masked_view = self.prepare_encoder_in.get_views()
+        in_channels = ref_masked_view.shape[1]
+        ref = torch.cat([ref_partial_view, ref_masked_view], dim=1) # Stack both ref images
+        
+        # Break reference images into patches: (B, 2*T, patch_dim)
+        ref_patches = ref.unfold(2, self.patch_size, self.patch_size).unfold(3, self.patch_size, self.patch_size)
+        ref_patches = ref_patches.permute(0, 2, 3, 1, 4, 5).reshape(batch_size, 2 * grid_size ** 2, in_channels * self.patch_size * self.patch_size)
+
+        # Only masked patches from output
+        masked_ids = self.prepare_encoder_in.masked_ids  # (batch, num_masked)
+        x_masked = torch.gather(x, 1, masked_ids.unsqueeze(-1).expand(-1, -1, x.shape[-1]))
+        ref_masked = torch.gather(ref_patches, 1, masked_ids.unsqueeze(-1).expand(-1, -1, x.shape[-1]))
+        
+        mse_loss = F.mse_loss(x_masked, ref_masked)
+        
+        total_loss = mse_loss
+        return total_loss
+            
     def get_reconstructed_imgs(self, x: Tensor):
         """
         Args:
             x (Tensor): Output of the decoder with shape of
-                        (batch_size, num_patches_both_views, decoder_embed_dim)
+                        (batch_size, num_masked_patches, decoder_embed_dim)
         Returns:
             img1, img2: (Tensor), (Tensor) both of shape (batch_size, in_channels, img_size, img_size), 
                         the correct format for rgb images
         """
-        x = torch.sigmoid(self.output_projection(x)) # Normalizes output between (0, 1)
         
         batch_size, patches_both_imgs, _ = x.shape
         patches_per_img = patches_both_imgs // 2
         grid_size = self.img_size // self.patch_size
         
         decoded_view1 = x[:, :patches_per_img, :]
-        print('View1:', self.similarity(decoded_view1))
         decoded_view1 = decoded_view1.reshape(
             batch_size, grid_size, grid_size, self.patch_size, 
             self.patch_size, self.in_channels)
@@ -61,7 +92,6 @@ class Model(nn.Module):
         img1 = img1.reshape(batch_size, self.in_channels, self.img_size, self.img_size)
         
         decoded_view2 = x[:, patches_per_img:, :]
-        print('View2', self.similarity(decoded_view2))
         decoded_view2 = decoded_view2.reshape(
             batch_size, grid_size, grid_size, self.patch_size, 
             self.patch_size, self.in_channels)
@@ -69,33 +99,6 @@ class Model(nn.Module):
         img2 = img2.reshape(batch_size, self.in_channels, self.img_size, self.img_size)
         
         return img1, img2
-    
-    def get_loss(self, decoder_output):
-        """
-        Calculate MSE loss and perceptual loss (ssim) of both reconstructed views, 
-        with a final loss being the average of their losses
-
-        Args:
-            decoder_output (Tensor):    (batch, num_patches_both_views, decoder_embed_dim), 
-                                        which gets passed through self.get_reconstructed_imgs
-        Returns:
-            total_loss (int): Total loss, comprised of an equal weighting of MSE and SSIM loss
-        """
-        self.reconstructed_1, self.reconstructed_2 = self.get_reconstructed_imgs(decoder_output)
-        ref1, ref2 = self.prepare_encoder_in.get_views() # (batch, in_channels, img_size, img_size)
-        
-        # MSE loss per pixel
-        mse_loss1 = torch.clamp(F.mse_loss(self.reconstructed_1, ref1), min=0.0)
-        mse_loss2 = torch.clamp(F.mse_loss(self.reconstructed_2, ref2), min=0.0)
-        mse_loss = (mse_loss1 + mse_loss2) / 2
-        
-        # Calculate SSIM perceptual loss
-        ssim_loss1 = 1 - torch.clamp(ssim(self.reconstructed_1, ref1, data_range=1.0), min=0.0)
-        ssim_loss2 = 1 - torch.clamp(ssim(self.reconstructed_2, ref2, data_range=1.0), min=0.0)
-        ssim_loss = (ssim_loss1 + ssim_loss2) / 2
-        
-        total_loss = 0.5 * mse_loss + 0.5 * ssim_loss
-        return total_loss
 
     def render_reconstructed(self):
         """
@@ -124,18 +127,10 @@ class Model(nn.Module):
             (Tensor): Output of decoder (batch, num_patches_both_views, decoder_embed_dim)
         """
         x = self.prepare_encoder_in(x1, x2)
-        print('After encoder prep:', self.similarity(x))
         x = self.encoder(x)
-        print('After encoder:', self.similarity(x))
-        x = self.prepare_decoder_in(x, self.prepare_encoder_in.visible_ids)
-        print('After decoder prep:', self.similarity(x))
+        x = self.prepare_decoder_in(x, 
+            self.prepare_encoder_in.masked_ids
+        )
         x = self.decoder(x)
-        print('After decoder:', self.similarity(x))
         return x 
-    
-    def similarity(self, x: Tensor):
-        x_norm = F.normalize(x, p=2, dim=-1)
-        similarity_matrix = torch.bmm(x_norm, x_norm.transpose(1, 2))
-
-        return similarity_matrix[0, 0, 1]
         

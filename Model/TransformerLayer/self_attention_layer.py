@@ -1,8 +1,5 @@
-import torch
 from torch import nn
 from torch import Tensor
-import torch.nn.functional as F
-import math
 
 class MultiHeadSelfAttention(nn.Module): 
     def __init__(self, embed_dim, num_heads):
@@ -17,10 +14,7 @@ class MultiHeadSelfAttention(nn.Module):
         self.num_heads = num_heads
         self.head_dim = int(embed_dim / num_heads)
         
-        self.qkv_projection = nn.Sequential(
-            nn.Linear(embed_dim, 3 * embed_dim),
-            nn.Dropout(0.2))
-        self.out_projection = nn.Linear(embed_dim, embed_dim)
+        self.attn = nn.MultiheadAttention(embed_dim, num_heads, dropout=0.1, batch_first=True)
         self.norm = nn.LayerNorm(embed_dim)
 
     def forward(self, x: Tensor):
@@ -37,21 +31,6 @@ class MultiHeadSelfAttention(nn.Module):
         Returns:
             (Tensor):   Output shape is the same as input
         """
-        residual = x
-        x = self.norm(x)
-        
-        # Get Q, K, V and distribute among the heads
-        batch, num_patches, _ = x.size()
-        qkv = self.qkv_projection(x) # (batch, num_patches, Q_dim + K_dim + V_dim)
-        qkv = qkv.view(batch, num_patches, 3, self.num_heads, self.head_dim)
-        qkv = qkv.permute(2, 0, 3, 1, 4) 
-        Q, K, V = qkv[0], qkv[1], qkv[2]  # (batch, num_heads, num_patches, head_dim)
-
-        # Vectorized attention for all heads
-        attention_weights = F.softmax(torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.head_dim), dim=-1)
-        attention_score = torch.matmul(attention_weights, V)
-        final_attention = attention_score.transpose(1, 2).contiguous().view(batch, num_patches, -1)
-        final_attention = self.out_projection(final_attention)
-        
-        return residual + final_attention
-        
+        x_norm = self.norm(x)
+        attn_output, _ = self.attn(x_norm, x_norm, x_norm)
+        return x + attn_output

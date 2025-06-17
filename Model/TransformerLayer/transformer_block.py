@@ -1,7 +1,8 @@
+import torch
 import torch.nn as nn
+from torch import Tensor
 from Model.TransformerLayer.mlp_layer import FeedForward
 from Model.TransformerLayer.self_attention_layer import MultiHeadSelfAttention
-
 class TransformerBlock(nn.Module):
     def __init__(self, embed_dim, num_heads):
         """
@@ -23,8 +24,8 @@ class TransformerBlock(nn.Module):
         Returns:
             (Tensor):   Output shape is the same as input
         """
-        x = x + self.self_attention(x)
-        x = x + self.mlp(x)
+        x = self.self_attention(x)
+        x = self.mlp(x)
         return x
 class Encoder(nn.Module):
     def __init__(self, embed_dim, num_heads):
@@ -33,10 +34,12 @@ class Encoder(nn.Module):
         self.encoder = nn.ModuleList([
             TransformerBlock(embed_dim, num_heads) 
         for _ in range(12)])
+        self.norm = nn.LayerNorm(embed_dim)
         
     def forward(self, x):
         for block in self.encoder:
             x = block(x)
+        x = self.norm(x)
         return x
     
 class Decoder(nn.Module):
@@ -45,9 +48,11 @@ class Decoder(nn.Module):
         
         self.decoder = nn.ModuleList([
             TransformerBlock(embed_dim, num_heads) 
-        for _ in range(12)])
+        for _ in range(8)])
+        self.norm = nn.LayerNorm(embed_dim)
         
     def forward(self, x):
         for block in self.decoder:
             x = block(x)
+        x = self.norm(x)
         return x

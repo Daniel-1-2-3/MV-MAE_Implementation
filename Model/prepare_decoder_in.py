@@ -13,17 +13,17 @@ class PrepareDecoderInput(nn.Module):
         """
         super().__init__()
         
+        self.total_patches = total_patches
         self.decoder_embed_dim = decoder_embed_dim
         self.change_dim = nn.Linear(encoder_embed_dim, decoder_embed_dim)
         
-        self.mask_tokens = nn.Parameter(
-            torch.randn(1, total_patches * 2, decoder_embed_dim))
+        self.view_template = nn.Parameter(
+            torch.randn(1, 2 * total_patches, decoder_embed_dim))
         
-        self.learnable_pos_embeds = nn.Parameter(torch.randn(1, 2 * total_patches, decoder_embed_dim))
-        self.learnable_view_embeds = nn.Parameter(torch.randn(1, 2 * total_patches, decoder_embed_dim))
-
+        self.learnable_pos_embeds = nn.Parameter(
+            torch.randn(1, 2 * total_patches, decoder_embed_dim))
     
-    def forward(self, x: Tensor, visible_ids: Tensor):
+    def forward(self, x: Tensor, masked_ids: Tensor):
         """
         This layer prepares the encoder's output for input into the decoder. Learnable
         mask tokens are inserted into places where the patch was masked during encoding, 
@@ -35,9 +35,8 @@ class PrepareDecoderInput(nn.Module):
         Args:
             x (Tensor):             The output of the encoder, with a shape
                                     of (batch, num_unmasked_patches, encoder_embed_dim)
-            visible_ids (Tensor):   Ids representing the positions of the unmasked patches 
+            masked_ids (Tensor):   Ids representing the positions of the unmasked patches 
                                     in the image grid, with a shape of (batch_size, num_unmasked_patches)
-
         Returns:
             (Tensor) with a shape of (batch_size, 2 * total_patches, decoder_embed_dim)
         """
@@ -45,14 +44,19 @@ class PrepareDecoderInput(nn.Module):
         batch_size = x.shape[0]
         x = self.change_dim(x)
         
-        # Insert unmasked patches at their positions
-        tokens = self.mask_tokens.expand(batch_size, -1, -1).clone()  # IMPORTANT: clone so it’s not shared!
-        x_full = tokens.clone() 
-        for b in range(batch_size):
-            x_full[b].index_copy_(0, visible_ids[b], x[b])
-            
-        learnable_pos_embeds = self.learnable_pos_embeds.expand(batch_size, -1, -1).to(x.device)
-        learnable_view_embeds = self.learnable_view_embeds.expand(batch_size, -1, -1).to(x.device)
-        x_full = x_full + learnable_pos_embeds + learnable_view_embeds
+        full_ids = torch.arange(2 * self.total_patches, device=masked_ids.device)
+        visible_ids = []
+        for b in range(masked_ids.size(0)):
+            mask = torch.ones(2 * self.total_patches, dtype=torch.bool, device=masked_ids.device)
+            mask[masked_ids[b]] = False 
+            visible_ids.append(full_ids[mask]) 
+        visible_ids = torch.stack(visible_ids, dim=0) # (batch, num_visible_ids)
         
-        return x_full
+        
+        view_tokens = self.view_template.expand(batch_size, -1, -1).clone() # Random vals of shape (batch, patches across both imgs, decoder_embed_dim), later insert patch embeds into it
+        view = view_tokens.scatter(1, visible_ids.unsqueeze(-1).expand(-1, -1, self.decoder_embed_dim), x)
+        
+        learnable_pos_embeds = self.learnable_pos_embeds.expand(batch_size, -1, -1).to(x.device)
+        x = view + learnable_pos_embeds
+        
+        return x

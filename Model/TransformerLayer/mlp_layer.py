@@ -25,8 +25,7 @@ class FeedForward(nn.Module):
         Returns:
             (Tensor):   Output shape is the same as input
         """
-        residual = x
-        x = self.norm(x)
-        x = self.mlp(x)
-        return residual + x  
+        x_norm = self.norm(x)
+        mlp_out = self.mlp(x_norm)
+        return x + mlp_out
         
