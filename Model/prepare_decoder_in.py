@@ -17,14 +17,16 @@ class PrepareDecoderInput(nn.Module):
         self.change_dim = nn.Linear(encoder_embed_dim, decoder_embed_dim)
         
         self.partial_view_mask_tokens = nn.Parameter(
-            torch.randn(1, total_patches, decoder_embed_dim) * 0.1)
+            torch.randn(1, total_patches, decoder_embed_dim))
         self.masked_view_mask_tokens = nn.Parameter(
-            torch.randn(1, total_patches, decoder_embed_dim) * 0.1)
+            torch.randn(1, total_patches, decoder_embed_dim))
         self.learnable_pos_embeds = nn.Parameter(
-            torch.randn(1, 2 * total_patches, decoder_embed_dim) * 0.1)
+            torch.randn(1, 2 * total_patches, decoder_embed_dim))
         
         self.view1_embed = nn.Parameter(torch.zeros(1, 1, decoder_embed_dim), requires_grad=False)
         self.view2_embed = nn.Parameter(torch.ones(1, 1, decoder_embed_dim), requires_grad=False)
+        
+        self.norm = nn.LayerNorm(decoder_embed_dim)
     
     def forward(self, x: Tensor, visible_ids: Tensor, partial_view_id):
         """
@@ -54,15 +56,16 @@ class PrepareDecoderInput(nn.Module):
         masked_view = self.masked_view_mask_tokens.expand(batch_size, -1, -1).to(x.device)
         
         if partial_view_id == 0:
-            partial_view = partial_view + self.view1_embed.to(x.device)
-            masked_view = masked_view + self.view2_embed.to(x.device)
+            partial_view = partial_view + self.view1_embed.to(x.device).clone()
+            masked_view = masked_view + self.view2_embed.to(x.device).clone()
         else:
-            partial_view = partial_view + self.view2_embed.to(x.device)
-            masked_view = masked_view + self.view1_embed.to(x.device)
+            partial_view = partial_view + self.view2_embed.to(x.device).clone()
+            masked_view = masked_view + self.view1_embed.to(x.device).clone()
             
         x = torch.cat([partial_view, masked_view], dim=1)
         
         learnable_pos_embeds = self.learnable_pos_embeds.expand(batch_size, -1, -1).to(x.device)
-        x = x + learnable_pos_embeds
+        x = x + 0.1 * learnable_pos_embeds
+        x = self.norm(x)
         
         return x

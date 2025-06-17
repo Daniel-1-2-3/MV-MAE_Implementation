@@ -22,10 +22,12 @@ class PrepareEncoderInput(nn.Module):
         
         self.training = training
         self.patch_extract = nn.Sequential(
-            nn.Conv2d(in_channels, embed_dim//2, kernel_size=3, stride=1, padding=1), nn.ReLU(),
-            nn.Conv2d(embed_dim//2, embed_dim, kernel_size=3, stride=1, padding=1), nn.ReLU(),
+            nn.Conv2d(in_channels, embed_dim//2, kernel_size=3, stride=1, padding=1), nn.LeakyReLU(),
+            nn.Conv2d(embed_dim//2, embed_dim, kernel_size=3, stride=1, padding=1), nn.LeakyReLU(),
             nn.AdaptiveAvgPool2d((int(math.sqrt(total_patches)), int(math.sqrt(total_patches))))
         ) # (batch, embed_dim, sqrt(total_patches), sqrt(total_patches))
+        
+        self.norm = nn.LayerNorm(embed_dim)
         
         self.positional_embeds = self.sin_cos_embed(int(math.sqrt(total_patches)), embed_dim)
         self.view1_embed = nn.Parameter(torch.zeros(1, 1, embed_dim), requires_grad=False)
@@ -96,24 +98,28 @@ class PrepareEncoderInput(nn.Module):
         x1 = self.patch_extract(x1)
         x1 = x1.flatten(2, 3)
         x1 = x1.transpose(1, 2) # (batch, total_patches, embed_dim)
+        x1 = self.norm(x1)
         x1 = x1 + self.positional_embeds.unsqueeze(0).to(x1.device) + self.view1_embed.to(x1.device)
         
         x2 = self.patch_extract(x2)
         x2 = x2.flatten(2, 3)
         x2 = x2.transpose(1, 2)
+        x2 = self.norm(x2)
         x2 = x2 + self.positional_embeds.unsqueeze(0).to(x2.device) + self.view2_embed.to(x2.device)
         
         x = torch.cat((x1, x2), dim=1)
         if self.training:
-            partial_view = random.choice([x1, x2]) # Other is fully masked
-            if partial_view is x1:
+            if random.random() < 0.5:
+                partial_view = x1.clone()
                 self.partial_view = x1_clone
                 self.masked_view = x2_clone
+                self.partial_view_id = 0
             else:
+                partial_view = x2.clone()
                 self.partial_view = x2_clone
                 self.masked_view = x1_clone
-            
-            self.partial_view_id = 0 if self.partial_view is x1 else 1
+                self.partial_view_id = 1
+         
             x = self.random_mask(partial_view, 0.25)
 
         return x

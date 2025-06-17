@@ -127,6 +127,7 @@ class Model(nn.Module):
             self.prepare_encoder_in.visible_ids, 
             self.prepare_encoder_in.partial_view_id
         )
+        print('std', torch.std(x, dim=1))
         x = self.decoder(x)
         return x 
         
