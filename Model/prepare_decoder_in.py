@@ -22,6 +22,7 @@ class PrepareDecoderInput(nn.Module):
         
         self.learnable_pos_embeds = nn.Parameter(
             torch.randn(1, 2 * total_patches, decoder_embed_dim))
+        self.view_embed = nn.Parameter(torch.randn(2, decoder_embed_dim))
     
     def forward(self, x: Tensor, masked_ids: Tensor):
         """
@@ -56,7 +57,14 @@ class PrepareDecoderInput(nn.Module):
         view_tokens = self.view_template.expand(batch_size, -1, -1).clone() # Random vals of shape (batch, patches across both imgs, decoder_embed_dim), later insert patch embeds into it
         view = view_tokens.scatter(1, visible_ids.unsqueeze(-1).expand(-1, -1, self.decoder_embed_dim), x)
         
-        learnable_pos_embeds = self.learnable_pos_embeds.expand(batch_size, -1, -1).to(x.device)
-        x = view + learnable_pos_embeds
+        view_ids = torch.cat([
+            torch.zeros(self.total_patches, dtype=torch.long, device=x.device),
+            torch.ones (self.total_patches, dtype=torch.long, device=x.device)
+        ], dim=0)  # (2*total_patches,)
+        view_embed = self.view_embed[view_ids] # (2*total_patches, encoder_embed_dim)
+        view_embed = view_embed.unsqueeze(0).expand(batch_size, -1, -1)
         
+        learnable_pos_embeds = self.learnable_pos_embeds.expand(batch_size, -1, -1).to(x.device)
+        
+        x = view + learnable_pos_embeds + view_embed
         return x

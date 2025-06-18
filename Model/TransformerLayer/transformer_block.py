@@ -24,8 +24,8 @@ class TransformerBlock(nn.Module):
         Returns:
             (Tensor):   Output shape is the same as input
         """
-        x = self.self_attention(x)
-        x = self.mlp(x)
+        x = x + self.self_attention(x)
+        x = x + self.mlp(x)
         return x
 class Encoder(nn.Module):
     def __init__(self, embed_dim, num_heads):
@@ -48,7 +48,7 @@ class Decoder(nn.Module):
         
         self.decoder = nn.ModuleList([
             TransformerBlock(embed_dim, num_heads) 
-        for _ in range(8)])
+        for _ in range(4)])
         self.norm = nn.LayerNorm(embed_dim)
         
     def forward(self, x):

@@ -40,6 +40,7 @@ class Trainer():
     def train(self, num_epochs, lr):
         self.model.to(self.device)
         self.model.train()
+
         print(f'Running on {self.device}')
         
         optimizer = torch.optim.Adam(self.model.parameters(), lr=lr) 

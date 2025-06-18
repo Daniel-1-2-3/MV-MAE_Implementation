@@ -4,7 +4,7 @@ from torch import Tensor
 import math, random
 
 class PrepareEncoderInput(nn.Module):
-    def __init__ (self, in_channels, total_patches, embed_dim, training=True):
+    def __init__ (self, in_channels, total_patches, embed_dim, patch_size, training=True):
         """
         Each view is passed through a series of 4 convolutional layers (with shared weights across views) 
         to extract patch embeddings. Fixed sine/cosine positional embeddings are then added to each patch 
@@ -23,15 +23,17 @@ class PrepareEncoderInput(nn.Module):
         self.total_patches = total_patches
         self.embed_dim = embed_dim
         self.training = training
+
         self.patch_extract = nn.Sequential(
-            nn.Conv2d(in_channels, embed_dim//2, kernel_size=3, stride=1, padding=1), nn.ReLU(),
-            nn.Conv2d(embed_dim//2, embed_dim, kernel_size=3, stride=1, padding=1), nn.ReLU(),
-            nn.AdaptiveAvgPool2d((int(math.sqrt(total_patches)), int(math.sqrt(total_patches))))
-        ) # (batch, embed_dim, sqrt(total_patches), sqrt(total_patches))
+            nn.Conv2d(in_channels, embed_dim * 2, kernel_size=patch_size, stride=patch_size, padding=0), 
+            nn.GELU(), # (batch, embed * 2, img_size/patch_size, img_size/patch_size)
+            nn.Conv2d(embed_dim * 2, embed_dim, kernel_size=1, stride=1, padding=0), 
+            nn.GELU(), # (batch, embed * 2, img_size/patch_size, img_size/patch_size)
+        )
         
         self.register_buffer("positional_embeds", 
-            self.sin_cos_embed(int(math.sqrt(self.total_patches)), self.embed_dim)
-        )   
+            self.sin_cos_embed(int(math.sqrt(self.total_patches)), self.embed_dim))   
+        self.view_embed = nn.Parameter(torch.randn(2, embed_dim))
          
         self.masked_ids = None
         self.partial_view, self.masked_view = None, None
@@ -94,9 +96,10 @@ class PrepareEncoderInput(nn.Module):
             (Tensor):   Output is a tensor that includes all unmasked patches, with a
                         shape of (batch, num_unmasked_patches, embed_dim)
         """
+        batch_size = x1.size(0)
         x1_clone, x2_clone = x1.clone(), x2.clone()
         
-        x1 = self.patch_extract(x1)
+        x1 = self.patch_extract(x1) # (batch, embed_dim, img_size/patch_size, img_size/patch_size)
         x1 = x1.flatten(2, 3)
         x1 = x1.transpose(1, 2) # (batch, total_patches, embed_dim)
         x1 = x1 + self.positional_embeds.unsqueeze(0).to(x1.device)
@@ -106,6 +109,16 @@ class PrepareEncoderInput(nn.Module):
         x2 = x2.transpose(1, 2)
         x2 = x2 + self.positional_embeds.unsqueeze(0).to(x2.device)
         
+        view_ids = torch.cat([
+            torch.zeros(self.total_patches, dtype=torch.long, device=x1.device),
+            torch.ones (self.total_patches, dtype=torch.long, device=x1.device)
+        ], dim=0)  # (2*total_patches,)
+        view_emb = self.view_embed[view_ids] # (2*total_patches, encoder_embed_dim)
+        view_emb = view_emb.unsqueeze(0).expand(batch_size, -1, -1)
+        
+        x1 = x1 + view_emb[:, :self.total_patches, :]
+        x2 = x2 + view_emb[:, self.total_patches:, :]
+                
         x = None
         if self.training:
             if random.random() < 0.5:

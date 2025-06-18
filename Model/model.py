@@ -20,7 +20,7 @@ class Model(nn.Module):
         
         self.prepare_encoder_in = PrepareEncoderInput(
             in_channels=3, total_patches=self.total_patches, 
-            embed_dim=encoder_embed_dim, training=training,
+            embed_dim=encoder_embed_dim, patch_size=patch_size, training=training,
         )
         self.encoder = Encoder(
             embed_dim=encoder_embed_dim, num_heads=encoder_num_heads
@@ -48,6 +48,7 @@ class Model(nn.Module):
                 total_loss (int): Total loss, comprised of an equal weighting of MSE and SSIM loss
         """
         x = torch.sigmoid(self.output_projection(x))
+        self.get_reconstructed_imgs(x)
         
         batch_size, _, _ = x.shape
         grid_size = self.img_size // self.patch_size
@@ -79,7 +80,6 @@ class Model(nn.Module):
             img1, img2: (Tensor), (Tensor) both of shape (batch_size, in_channels, img_size, img_size), 
                         the correct format for rgb images
         """
-        
         batch_size, patches_both_imgs, _ = x.shape
         patches_per_img = patches_both_imgs // 2
         grid_size = self.img_size // self.patch_size
@@ -97,6 +97,8 @@ class Model(nn.Module):
             self.patch_size, self.in_channels)
         img2 = decoded_view2.permute(0, 5, 1, 3, 2, 4)
         img2 = img2.reshape(batch_size, self.in_channels, self.img_size, self.img_size)
+        
+        self.reconstructed_1, self.reconstructed_2 = img1, img2
         
         return img1, img2
 
@@ -128,9 +130,18 @@ class Model(nn.Module):
         """
         x = self.prepare_encoder_in(x1, x2)
         x = self.encoder(x)
-        x = self.prepare_decoder_in(x, 
-            self.prepare_encoder_in.masked_ids
-        )
+        x = self.prepare_decoder_in(x, self.prepare_encoder_in.masked_ids)
         x = self.decoder(x)
         return x 
-        
+
+    def similarity(self, x: torch.Tensor): # For debug
+        batch_size, num_patches, dim = x.shape
+        x = F.normalize(x, dim=2)
+        x = x.permute(1, 0, 2)
+        patch_embeddings = x.mean(dim=1)  # (patches, dim)
+        sim_matrix = patch_embeddings @ patch_embeddings.T  # (patches, patches)
+        num = num_patches * (num_patches - 1)
+        mean_sim = sim_matrix.masked_fill(torch.eye(num_patches, device=x.device).bool(), 0).sum() / num
+
+        return mean_sim.item()
+                
