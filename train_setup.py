@@ -12,16 +12,18 @@ class Trainer():
     def __init__(self, img_size, patch_size, batch_size, in_channels,
                  encoder_embed_dim, encoder_num_heads,
                  decoder_embed_dim, decoder_num_heads, 
-                 base_dataset_dir, mse, ssim):
+                 base_dataset_dir, mse, ssim, debug):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = Model(
             img_size, patch_size, in_channels, encoder_embed_dim, encoder_num_heads, 
-            decoder_embed_dim, decoder_num_heads, True, mse, ssim)
+            decoder_embed_dim, decoder_num_heads, True, mse, ssim, debug)
         
         self.transform = transforms.Compose([
             transforms.Resize((img_size, img_size)),
-            transforms.ToTensor()])
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.51905, 0.47986, 0.48809], std=[0.17454, 0.20183, 0.19598])
+        ])
         
         print("Loading dataset...")
         train_dir, val_dir = os.path.join(base_dataset_dir, 'Train'), os.path.join(base_dataset_dir, 'Val')

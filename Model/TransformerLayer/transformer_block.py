@@ -48,7 +48,7 @@ class Decoder(nn.Module):
         
         self.decoder = nn.ModuleList([
             TransformerBlock(embed_dim, num_heads) 
-        for _ in range(4)])
+        for _ in range(8)])
         self.norm = nn.LayerNorm(embed_dim)
         
     def forward(self, x):

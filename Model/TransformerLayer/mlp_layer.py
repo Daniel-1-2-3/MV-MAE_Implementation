@@ -12,6 +12,7 @@ class FeedForward(nn.Module):
             nn.GELU(),
             nn.Dropout(0.2),
             nn.Linear(3 * embed_dim, embed_dim),
+            nn.GELU(),
             nn.Dropout(0.2))
         self.norm = nn.LayerNorm(embed_dim)
     

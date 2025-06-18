@@ -25,9 +25,7 @@ class PrepareEncoderInput(nn.Module):
         self.training = training
 
         self.patch_extract = nn.Sequential(
-            nn.Conv2d(in_channels, embed_dim * 2, kernel_size=patch_size, stride=patch_size, padding=0), 
-            nn.GELU(), # (batch, embed * 2, img_size/patch_size, img_size/patch_size)
-            nn.Conv2d(embed_dim * 2, embed_dim, kernel_size=1, stride=1, padding=0), 
+            nn.Conv2d(in_channels, embed_dim, kernel_size=patch_size, stride=patch_size, padding=0), 
             nn.GELU(), # (batch, embed * 2, img_size/patch_size, img_size/patch_size)
         )
         

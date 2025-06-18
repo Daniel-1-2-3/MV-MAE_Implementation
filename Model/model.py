@@ -12,9 +12,10 @@ class Model(nn.Module):
     def __init__(self, img_size=128, patch_size=8, in_channels=3,
                  encoder_embed_dim=768, encoder_num_heads=12,
                  decoder_embed_dim=512, decoder_num_heads=8, 
-                 training=True, mse=0.2, ssim=0.8):
+                 training=True, mse=0.2, ssim=0.8, debug = False):
         
         super().__init__()
+        self.debug = debug
         self.mse, self.ssim = mse, ssim
         self.img_size, self.patch_size, self.in_channels = img_size, patch_size, in_channels
         self.total_patches = int((self.img_size / patch_size) ** 2)
@@ -98,6 +99,7 @@ class Model(nn.Module):
         Renders the reconstructed partial and masked views, taking only 
         the first pair in the batch.
         """
+        
         package = None
         if self.prepare_encoder_in.partial_id == "L":
             package = zip([self.reconstructed_1, self.reconstructed_2], 
@@ -126,9 +128,17 @@ class Model(nn.Module):
             (Tensor): Output of decoder (batch, num_patches_both_views, decoder_embed_dim)
         """
         x = self.prepare_encoder_in(x1, x2)
+        if self.debug:
+            print('ENCODE PREP:', self.similarity(x))
         x = self.encoder(x)
+        if self.debug:
+            print('ENCODE:', self.similarity(x))
         x = self.prepare_decoder_in(x, self.prepare_encoder_in.masked_ids)
+        if self.debug:
+            print('DECODE PREP:', self.similarity(x))
         x = self.decoder(x)
+        if self.debug:
+            print('DECODE:', self.similarity(x))
         return x 
 
     def similarity(self, x: torch.Tensor): # For debug
