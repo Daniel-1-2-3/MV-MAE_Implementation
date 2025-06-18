@@ -12,12 +12,12 @@ class Trainer():
     def __init__(self, img_size, patch_size, batch_size, in_channels,
                  encoder_embed_dim, encoder_num_heads,
                  decoder_embed_dim, decoder_num_heads, 
-                 base_dataset_dir):
+                 base_dataset_dir, mse, ssim):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = Model(
-            img_size, patch_size, in_channels, encoder_embed_dim, 
-            encoder_num_heads, decoder_embed_dim, decoder_num_heads, True)
+            img_size, patch_size, in_channels, encoder_embed_dim, encoder_num_heads, 
+            decoder_embed_dim, decoder_num_heads, True, mse, ssim)
         
         self.transform = transforms.Compose([
             transforms.Resize((img_size, img_size)),

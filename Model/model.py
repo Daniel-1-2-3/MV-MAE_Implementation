@@ -12,9 +12,10 @@ class Model(nn.Module):
     def __init__(self, img_size=128, patch_size=8, in_channels=3,
                  encoder_embed_dim=768, encoder_num_heads=12,
                  decoder_embed_dim=512, decoder_num_heads=8, 
-                 training=True):
+                 training=True, mse=0.2, ssim=0.8):
         
         super().__init__()
+        self.mse, self.ssim = mse, ssim
         self.img_size, self.patch_size, self.in_channels = img_size, patch_size, in_channels
         self.total_patches = int((self.img_size / patch_size) ** 2)
         
@@ -48,27 +49,17 @@ class Model(nn.Module):
                 total_loss (int): Total loss, comprised of an equal weighting of MSE and SSIM loss
         """
         x = torch.sigmoid(self.output_projection(x))
-        self.get_reconstructed_imgs(x)
-        
-        batch_size, _, _ = x.shape
-        grid_size = self.img_size // self.patch_size
-        
+        img1, img2 = self.get_reconstructed_imgs(x)
         ref_partial_view, ref_masked_view = self.prepare_encoder_in.get_views()
-        in_channels = ref_masked_view.shape[1]
-        ref = torch.cat([ref_partial_view, ref_masked_view], dim=1) # Stack both ref images
-        
-        # Break reference images into patches: (B, 2*T, patch_dim)
-        ref_patches = ref.unfold(2, self.patch_size, self.patch_size).unfold(3, self.patch_size, self.patch_size)
-        ref_patches = ref_patches.permute(0, 2, 3, 1, 4, 5).reshape(batch_size, 2 * grid_size ** 2, in_channels * self.patch_size * self.patch_size)
 
-        # Only masked patches from output
-        masked_ids = self.prepare_encoder_in.masked_ids  # (batch, num_masked)
-        x_masked = torch.gather(x, 1, masked_ids.unsqueeze(-1).expand(-1, -1, x.shape[-1]))
-        ref_masked = torch.gather(ref_patches, 1, masked_ids.unsqueeze(-1).expand(-1, -1, x.shape[-1]))
+        mse_loss = F.mse_loss(torch.cat([img1, img2],1), 
+                    torch.cat([ref_partial_view, ref_masked_view],1) )
         
-        mse_loss = F.mse_loss(x_masked, ref_masked)
-        
-        total_loss = mse_loss
+        ssim1 = ssim(img1, ref_partial_view, data_range=1.0)
+        ssim2 = ssim(img2, ref_masked_view, data_range=1.0)
+        ssim_loss = 1.0 - 0.5 * (ssim1 + ssim2)    
+            
+        total_loss = self.mse * mse_loss + self.ssim * ssim_loss
         return total_loss
             
     def get_reconstructed_imgs(self, x: Tensor):
@@ -107,8 +98,14 @@ class Model(nn.Module):
         Renders the reconstructed partial and masked views, taking only 
         the first pair in the batch.
         """
-        package = zip([self.reconstructed_1, self.reconstructed_2], 
-                      ["Reconstructed Partial View", "Reconstructed Masked View"])
+        package = None
+        if self.prepare_encoder_in.partial_id == "L":
+            package = zip([self.reconstructed_1, self.reconstructed_2], 
+                ["Reconstructed Partial View", "Reconstructed Masked View"])
+        else:
+            package = zip([self.reconstructed_2, self.reconstructed_1], 
+                ["Reconstructed Partial View", "Reconstructed Masked View"])
+
         for i, (img, title) in enumerate(package):
             plt.subplot(1, 2, i + 1)
             plt.imshow(img[0].permute(1, 2, 0).cpu().detach().numpy())

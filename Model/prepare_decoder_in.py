@@ -26,10 +26,8 @@ class PrepareDecoderInput(nn.Module):
     
     def forward(self, x: Tensor, masked_ids: Tensor):
         """
-        This layer prepares the encoder's output for input into the decoder. Learnable
-        mask tokens are inserted into places where the patch was masked during encoding, 
-        resulting in a Tensor of shape (batch, 2 * total_patches, decoder_embed_dim), since it
-        is comprised learnable mask token placeholders and encoder output tokens, together 
+        This layer prepares the encoder's output for input into the decoder. Learnable mask 
+        tokens are inserted, with the mask token placeholders and encoder output tokens together 
         representing both left and right views. Positional embeddings and view 
         embeddings are added.
 
@@ -52,7 +50,6 @@ class PrepareDecoderInput(nn.Module):
             mask[masked_ids[b]] = False 
             visible_ids.append(full_ids[mask]) 
         visible_ids = torch.stack(visible_ids, dim=0) # (batch, num_visible_ids)
-        
         
         view_tokens = self.view_template.expand(batch_size, -1, -1).clone() # Random vals of shape (batch, patches across both imgs, decoder_embed_dim), later insert patch embeds into it
         view = view_tokens.scatter(1, visible_ids.unsqueeze(-1).expand(-1, -1, self.decoder_embed_dim), x)

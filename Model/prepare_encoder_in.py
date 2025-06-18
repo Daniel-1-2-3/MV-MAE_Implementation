@@ -37,6 +37,7 @@ class PrepareEncoderInput(nn.Module):
          
         self.masked_ids = None
         self.partial_view, self.masked_view = None, None
+        self.partial_id = None # String of "L"/"R"
     
     def sin_cos_embed(self, grid_size, embed_dim):
         """
@@ -124,6 +125,7 @@ class PrepareEncoderInput(nn.Module):
             if random.random() < 0.5:
                 self.partial_view = x1_clone
                 self.masked_view = x2_clone
+                self.partial_id = "L"
                 
                 x, self.masked_ids = self.random_mask(x1, 0.25)
                 full_masked_ids = torch.arange(self.total_patches, 2 * self.total_patches, device=x.device)
@@ -131,6 +133,8 @@ class PrepareEncoderInput(nn.Module):
             else:
                 self.partial_view = x2_clone
                 self.masked_view = x1_clone
+                self.partial_id = "R"
+                
                 x, self.masked_ids = self.random_mask(x2, 0.25)
                 full_masked_ids = torch.arange(0, self.total_patches, device=x.device)
                 self.masked_ids = torch.cat([self.masked_ids + self.total_patches, full_masked_ids.unsqueeze(0).expand(x.size(0), -1)], dim=1)
