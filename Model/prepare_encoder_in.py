@@ -25,7 +25,9 @@ class PrepareEncoderInput(nn.Module):
         self.training = training
 
         self.patch_extract = nn.Sequential(
-            nn.Conv2d(in_channels, embed_dim, kernel_size=patch_size, stride=patch_size, padding=0), 
+            nn.Conv2d(in_channels, embed_dim * 2, kernel_size=patch_size, stride=patch_size, padding=0), 
+            nn.GELU(), # (batch, embed * 2, img_size/patch_size, img_size/patch_size)
+            nn.Conv2d(embed_dim * 2, embed_dim, kernel_size=1, stride=1, padding=0), 
             nn.GELU(), # (batch, embed * 2, img_size/patch_size, img_size/patch_size)
         )
         
@@ -125,6 +127,7 @@ class PrepareEncoderInput(nn.Module):
                 self.masked_view = x2_clone
                 self.partial_id = "L"
                 
+                # masked_ids to keep track of which locations were masked, so that mask tokens can be added later
                 x, self.masked_ids = self.random_mask(x1, 0.25)
                 full_masked_ids = torch.arange(self.total_patches, 2 * self.total_patches, device=x.device)
                 self.masked_ids = torch.cat([self.masked_ids, full_masked_ids.unsqueeze(0).expand(x.size(0), -1)], dim=1)

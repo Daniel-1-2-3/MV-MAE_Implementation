@@ -49,7 +49,7 @@ class Model(nn.Module):
             Returns:
                 total_loss (int): Total loss, comprised of an equal weighting of MSE and SSIM loss
         """
-        x = torch.sigmoid(self.output_projection(x))
+        x = self.output_projection(x)
         img1, img2 = self.get_reconstructed_imgs(x)
         ref_partial_view, ref_masked_view = self.prepare_encoder_in.get_views()
 
@@ -99,7 +99,12 @@ class Model(nn.Module):
         Renders the reconstructed partial and masked views, taking only 
         the first pair in the batch.
         """
-        
+        def unnormalize(tensor, mean = [0.51905, 0.47986, 0.48809], 
+                        std = [0.17454, 0.20183, 0.19598]):
+            mean = torch.tensor(mean).view(-1, 1, 1).to(tensor.device)
+            std = torch.tensor(std).view(-1, 1, 1).to(tensor.device)
+            return tensor * std + mean
+                
         package = None
         if self.prepare_encoder_in.partial_id == "L":
             package = zip([self.reconstructed_1, self.reconstructed_2], 
@@ -110,7 +115,8 @@ class Model(nn.Module):
 
         for i, (img, title) in enumerate(package):
             plt.subplot(1, 2, i + 1)
-            plt.imshow(img[0].permute(1, 2, 0).cpu().detach().numpy())
+            img = unnormalize(img[0].cpu().detach(), mean=[0.51905, 0.47986, 0.48809], std=[0.17454, 0.20183, 0.19598])
+            plt.imshow(img.permute(1, 2, 0).clamp(0, 1).numpy())
             plt.title(title)
             plt.axis("off")
             
