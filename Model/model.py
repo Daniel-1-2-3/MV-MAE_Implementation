@@ -7,6 +7,7 @@ from torch import nn, Tensor
 import torch.nn.functional as F
 from pytorch_msssim import ssim
 import matplotlib.pyplot as plt
+import torchvision.transforms.functional as torchvision_F
 
 class Model(nn.Module):
     def __init__(self, img_size=128, patch_size=8, in_channels=3,
@@ -38,10 +39,10 @@ class Model(nn.Module):
         )
         self.output_projection = nn.Linear(decoder_embed_dim, in_channels * patch_size ** 2)
         self.reconstructed_1, self.reconstructed_2 = None, None
-        
+             
         self.register_buffer('mean', torch.tensor([0.51905, 0.47986, 0.48809]).view(1, 3, 1, 1))
         self.register_buffer('std',  torch.tensor([0.17454, 0.20183, 0.19598]).view(1, 3, 1, 1))
-    
+        
     def get_loss(self, x: Tensor):
         """
             Calculate MSE loss of reconstructed patches in both views.
@@ -52,23 +53,17 @@ class Model(nn.Module):
             Returns:
                 total_loss (int): Total loss, comprised of an equal weighting of MSE and SSIM loss
         """
-        x = self.output_projection(x)
+        x = torch.sigmoid(self.output_projection(x))
         img1, img2 = self.get_reconstructed_imgs(x)
-        
-        # Normalize between +-3, just like the ref images
-        img1 = (img1 - self.mean) / self.std
-        img2 = (img2 - self.mean) / self.std
-        
-        print("=====IMG1=====")
-        print(img1)
+       
         ref_partial_view, ref_masked_view = self.prepare_encoder_in.get_views()
-        print("=====REF1=====")
-        print(ref_partial_view)
+        ref_partial_view = ref_partial_view * self.std + self.mean
+        ref_masked_view = ref_masked_view * self.std + self.mean
 
-        mse_loss = F.mse_loss(torch.cat([img1, img2],1), 
-                    torch.cat([ref_partial_view, ref_masked_view],1) )
+        mse_loss = F.mse_loss(torch.cat([img1, img2], 1), 
+                    torch.cat([ref_partial_view, ref_masked_view], 1))
         
-        ssim1 = ssim(img1, ref_partial_view, data_range=1.0)
+        ssim1 = ssim(img1, ref_partial_view, data_range=1.0) # both are +- 3 range, thus range = 6.0
         ssim2 = ssim(img2, ref_masked_view, data_range=1.0)
         ssim_loss = 1.0 - 0.5 * (ssim1 + ssim2)    
             
