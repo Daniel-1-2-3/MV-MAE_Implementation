@@ -17,8 +17,7 @@ class PrepareDecoderInput(nn.Module):
         self.decoder_embed_dim = decoder_embed_dim
         self.change_dim = nn.Linear(encoder_embed_dim, decoder_embed_dim)
         
-        self.view_template = nn.Parameter(
-            torch.randn(1, 2 * total_patches, decoder_embed_dim))
+        self.mask_token = nn.Parameter(torch.randn(1, 1, decoder_embed_dim))
         
         self.learnable_pos_embeds = nn.Parameter(
             torch.randn(1, 2 * total_patches, decoder_embed_dim))
@@ -51,7 +50,7 @@ class PrepareDecoderInput(nn.Module):
             visible_ids.append(full_ids[mask]) 
         visible_ids = torch.stack(visible_ids, dim=0) # (batch, num_visible_ids)
         
-        view_tokens = self.view_template.expand(batch_size, -1, -1).clone() # Random vals of shape (batch, patches across both imgs, decoder_embed_dim), later insert patch embeds into it
+        view_tokens = self.mask_token.expand(batch_size, 2 * self.total_patches, -1) # Random vals of shape (batch, patches across both imgs, decoder_embed_dim), later insert patch embeds into it
         view = view_tokens.scatter(1, visible_ids.unsqueeze(-1).expand(-1, -1, self.decoder_embed_dim), x)
         
         view_ids = torch.cat([

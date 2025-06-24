@@ -14,6 +14,7 @@ class Trainer():
                  decoder_embed_dim, decoder_num_heads, 
                  base_dataset_dir, mse, ssim, debug):
 
+        self.debug = debug
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = Model(
             img_size, patch_size, in_channels, encoder_embed_dim, encoder_num_heads, 
@@ -53,11 +54,14 @@ class Trainer():
                 
                 x1, x2 = x1.to(self.device), x2.to(self.device)
                 out = self.model(x1, x2)
-                loss: torch.Tensor = self.model.get_loss(out)
+                loss = self.model.get_loss(out)
                 loss.backward()
                 optimizer.step()
                 
                 total_loss += loss.item()
+                if (self.debug):
+                    self.model.render_reconstructed()
+                
             
             avg_train_loss = total_loss / len(self.train_loader)
             avg_val_loss = self.evaluate()

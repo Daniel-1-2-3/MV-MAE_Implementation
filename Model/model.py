@@ -38,6 +38,9 @@ class Model(nn.Module):
         )
         self.output_projection = nn.Linear(decoder_embed_dim, in_channels * patch_size ** 2)
         self.reconstructed_1, self.reconstructed_2 = None, None
+        
+        self.register_buffer('mean', torch.tensor([0.51905, 0.47986, 0.48809]).view(1, 3, 1, 1))
+        self.register_buffer('std',  torch.tensor([0.17454, 0.20183, 0.19598]).view(1, 3, 1, 1))
     
     def get_loss(self, x: Tensor):
         """
@@ -51,7 +54,16 @@ class Model(nn.Module):
         """
         x = self.output_projection(x)
         img1, img2 = self.get_reconstructed_imgs(x)
+        
+        # Normalize between +-3, just like the ref images
+        img1 = (img1 - self.mean) / self.std
+        img2 = (img2 - self.mean) / self.std
+        
+        print("=====IMG1=====")
+        print(img1)
         ref_partial_view, ref_masked_view = self.prepare_encoder_in.get_views()
+        print("=====REF1=====")
+        print(ref_partial_view)
 
         mse_loss = F.mse_loss(torch.cat([img1, img2],1), 
                     torch.cat([ref_partial_view, ref_masked_view],1) )
