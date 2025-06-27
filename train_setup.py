@@ -56,6 +56,17 @@ class Trainer():
                 out = self.model(x1, x2)
                 loss = self.model.get_loss(out)
                 loss.backward()
+                
+                # —— print gradient stats —— 
+                for name, param in self.model.named_parameters():
+                    if param.grad is None:
+                        print(f"{name}: grad=None")
+                    else:
+                        grad = param.grad.detach()
+                        print(f"{name}: mean={grad.mean():.3e}, max={grad.max():.3e}, min={grad.min():.3e}")
+                print(f"Total loss: {loss.item():.3e}\n")
+                # — end gradient print —
+    
                 optimizer.step()
                 
                 total_loss += loss.item()

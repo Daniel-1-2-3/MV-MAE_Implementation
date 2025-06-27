@@ -27,6 +27,7 @@ class TransformerBlock(nn.Module):
         x = x + self.self_attention(x)
         x = x + self.mlp(x)
         return x
+    
 class Encoder(nn.Module):
     def __init__(self, embed_dim, num_heads):
         super().__init__()
@@ -34,12 +35,10 @@ class Encoder(nn.Module):
         self.encoder = nn.ModuleList([
             TransformerBlock(embed_dim, num_heads) 
         for _ in range(12)])
-        self.norm = nn.LayerNorm(embed_dim)
-        
+    
     def forward(self, x):
         for block in self.encoder:
             x = block(x)
-        x = self.norm(x)
         return x
     
 class Decoder(nn.Module):
@@ -49,10 +48,8 @@ class Decoder(nn.Module):
         self.decoder = nn.ModuleList([
             TransformerBlock(embed_dim, num_heads) 
         for _ in range(8)])
-        self.norm = nn.LayerNorm(embed_dim)
-        
+      
     def forward(self, x):
         for block in self.decoder:
             x = block(x)
-        x = self.norm(x)
         return x

@@ -7,7 +7,6 @@ from torch import nn, Tensor
 import torch.nn.functional as F
 from pytorch_msssim import ssim
 import matplotlib.pyplot as plt
-import torchvision.transforms.functional as torchvision_F
 
 class Model(nn.Module):
     def __init__(self, img_size=128, patch_size=8, in_channels=3,
