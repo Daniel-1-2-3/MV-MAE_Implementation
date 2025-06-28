@@ -16,7 +16,6 @@ def debug(out, model):
     cos = torch.nn.functional.cosine_similarity(out[:, 1:, :], out[:, 1:, :].mean(dim=1, keepdim=True), dim=-1)
     print("Mean cosine similarity to average patch:", cos.mean().item())
 
-    # Check for vanishing gradients (after backward pass!)
     print("\n--- Weight Statistics ---")
     for name, param in model.named_parameters():
         if param.requires_grad:
