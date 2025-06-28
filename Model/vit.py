@@ -3,12 +3,12 @@ from timm.models.layers import DropPath
 
 class VitBlock(nn.Module):
     def __init__(self, 
-        embed_dim: int,
-        heads: int,
-        mlp_ratio: 4.0,
-        attn_drop_rate: 0.2,
-        mlp_drop_rate: 0.2,
-        path_drop_rate=0.1, # Drops entire connection
+            embed_dim: int,
+            heads: int,
+            mlp_ratio: float,
+            attn_drop_rate: float,
+            mlp_drop_rate: float,
+            path_drop_rate: float, # Drops entire connection
         ):
         
         super().__init__()
@@ -35,6 +35,16 @@ class VitBlock(nn.Module):
         self.norm_before_mlp = nn.LayerNorm(normalized_shape=embed_dim, eps=1e-6)
         
     def forward(self, x):
+        """
+        ViT block includes multi headed self attention and multi-layer perception (mlp) layer,
+        each with prenorm and residual/skip connection.
+
+        Args:
+            x (Tensor): Shape (batch, num_patches, embed_dim)
+
+        Returns:
+            x (Tensor): Same shape as input (batch, num_patches, embed_dim)
+        """
         residual = x
         x = self.norm_before_attn(x)
         x, attn_weights = self.multi_head_self_attn(x, x, x)

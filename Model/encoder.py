@@ -1,7 +1,8 @@
 import torch
 from torch import nn, Tensor
 import numpy as np
-from Model.sincos_pos_embeds import PosEmbed
+from sincos_pos_embeds import PosEmbed
+from vit import VitBlock
 import random
 
 class ViTMaskedEncoder(nn.Module):
@@ -12,6 +13,8 @@ class ViTMaskedEncoder(nn.Module):
             in_channels=3,
             img_h_size=128,
             img_w_size=256, # Width of the fused image, with both views
+            heads=16,
+            depth=12
         ):
         
         super().__init__()
@@ -21,8 +24,19 @@ class ViTMaskedEncoder(nn.Module):
         self.in_channels = in_channels
         self.img_h_size = img_h_size
         self.img_w_size = img_w_size
+        self.heads = heads
+        self.depth = depth
         
-        self.foward_conv = self.construct_conv_layers()
+        self.forward_conv = self.construct_conv_layers()
+        self.vit_block = VitBlock(
+            embed_dim=self.embed_dim,
+            heads=self.heads,
+            mlp_ratio=4.0,
+            attn_drop_rate=0.1,
+            mlp_drop_rate=0.1,
+            path_drop_rate=0.05
+        )
+        self.norm = nn.LayerNorm(normalized_shape=self.embed_dim, eps=1e-6)
 
     def forward(self, x: Tensor):
         """
@@ -45,11 +59,13 @@ class ViTMaskedEncoder(nn.Module):
     
         x, mask = self.random_view_masking(x, mask_ratio=0.20)
         print("(batch, unmasked patches, embed_dim)", x.shape)
-        print(mask[0])
-
         
-        # Transformer blocks
-        return x
+        for i in range(self.depth):
+            x = self.vit_block(x)
+        x = self.norm(x)
+        print("(batch, unmasked patches, embed_dim)", x.shape)
+        
+        return x, mask
 
     def random_view_masking(self, x: Tensor, mask_ratio=0.20):
         """
@@ -186,4 +202,4 @@ if __name__ == "__main__":
     
     encoder = ViTMaskedEncoder(nviews=nviews, patch_size=patch_size, 
         embed_dim=embed_dim, in_channels=in_channels)
-    x = encoder.forward(x)
+    x, mask = encoder.forward(x)
