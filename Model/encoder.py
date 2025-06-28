@@ -1,10 +1,9 @@
 import torch
 from torch import nn, Tensor
 import numpy as np
-from sincos_pos_embeds import PosEmbed
-from vit import VitBlock
+from Model.sincos_pos_embeds import PosEmbed
+from Model.vit import VitBlock
 import random
-
 class ViTMaskedEncoder(nn.Module):
     def __init__(self, 
             nviews=2,
@@ -52,19 +51,14 @@ class ViTMaskedEncoder(nn.Module):
         
         x = self.forward_early_conv(x) # Early conv to embed patches 
         # - (batch, total patches across both views, embed_dim)
-        print("(batch, total patches across both views, embed_dim)", x.shape)
         
         x = self.add_pos_embeds(x) # Add sin/cos positional embeddings to each patch, addition element wise along last dim
-        print("(batch, total patches across both views, embed_dim)", x.shape)
-    
         x, mask = self.random_view_masking(x, mask_ratio=0.20)
-        print("(batch, unmasked patches, embed_dim)", x.shape)
-        
+     
         for i in range(self.depth):
             x = self.vit_block(x)
         x = self.norm(x)
-        print("(batch, unmasked patches, embed_dim)", x.shape)
-        
+      
         return x, mask
 
     def random_view_masking(self, x: Tensor, mask_ratio=0.20):

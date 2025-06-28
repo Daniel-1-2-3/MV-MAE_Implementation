@@ -1,5 +1,5 @@
 from torch import nn
-from timm.models.layers import DropPath
+from timm.layers import DropPath
 
 class VitBlock(nn.Module):
     def __init__(self, 
