@@ -1,7 +1,7 @@
 import torch
 from torch import nn, Tensor
 import numpy as np
-from pos_embeds import PosEmbed
+from Model.sincos_pos_embeds import PosEmbed
 import random
 
 class ViTMaskedEncoder(nn.Module):
@@ -21,6 +21,8 @@ class ViTMaskedEncoder(nn.Module):
         self.in_channels = in_channels
         self.img_h_size = img_h_size
         self.img_w_size = img_w_size
+        
+        self.foward_conv = self.construct_conv_layers()
 
     def forward(self, x: Tensor):
         """
@@ -44,8 +46,8 @@ class ViTMaskedEncoder(nn.Module):
         x, mask = self.random_view_masking(x, mask_ratio=0.20)
         print("(batch, unmasked patches, embed_dim)", x.shape)
         print(mask[0])
-    
-        # Add a cls token (learnable extra patch)
+
+        
         # Transformer blocks
         return x
 
@@ -119,6 +121,26 @@ class ViTMaskedEncoder(nn.Module):
         
         x = x + pos_embed_all # Auto broadcasts over batch
         return x # (batch, total_num_patches, embed_dim)
+    
+    def construct_conv_layers(self):
+        # Conv layers
+        layers = []
+        in_channels = self.in_channels
+        nconvs = int(np.log2(self.patch_size)) 
+        for i in range(nconvs):
+            out_channels = self.embed_dim // (2 ** (nconvs - i + 1)) # The input channels of the next layer
+            layers.append(nn.Conv2d( # In and out channels are dim 1
+                in_channels=in_channels, out_channels=out_channels, kernel_size=4, stride=2, padding=1 # Output dims are halved 
+            ))
+            in_channels = out_channels
+        layers.append(nn.ReLU())
+        
+        layers.append(nn.Conv2d(
+            in_channels=in_channels, out_channels=self.embed_dim, kernel_size=1, stride=1
+        )) # Final projection
+        
+        forward_conv = nn.Sequential(*layers)
+        return forward_conv
         
     def forward_early_conv(self, x: Tensor):
         """
@@ -138,25 +160,8 @@ class ViTMaskedEncoder(nn.Module):
         x = torch.split(x, width_per_view, dim=2) # Tuple of tensors, each (b, h, w_per_cam, c)
         x = torch.cat(x, dim=0) # (b * nviews, h, w_per_cam, c)
         x = x.permute(0, 3, 1, 2)
-
-        # Conv layers
-        layers = []
-        in_channels = self.in_channels
-        nconvs = int(np.log2(self.patch_size)) 
-        for i in range(nconvs):
-            out_channels = self.embed_dim // (2 ** (nconvs - i + 1)) # The input channels of the next layer
-            layers.append(nn.Conv2d( # In and out channels are dim 1
-                in_channels=in_channels, out_channels=out_channels, kernel_size=4, stride=2, padding=1 # Output dims are halved 
-            ))
-            in_channels = out_channels
-        layers.append(nn.ReLU())
         
-        layers.append(nn.Conv2d(
-            in_channels=in_channels, out_channels=self.embed_dim, kernel_size=1, stride=1
-        )) # Final projection
-        
-        forward_conv = nn.Sequential(*layers)
-        x = forward_conv(x) # Shape (b * nviews, embed_dim, reduced_height, reduced_width)
+        x = self.forward_conv(x) # Shape (b * nviews, embed_dim, reduced_height, reduced_width)
         
         # Reshape x to be fed into the transformer
         x = x.permute(0, 2, 3, 1) # To (b * nviews, reduced_height, reduced_width, embed_dim)
