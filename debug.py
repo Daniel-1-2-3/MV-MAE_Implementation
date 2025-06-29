@@ -1,11 +1,24 @@
 from CreateDataset.dataset import StereoImageDataset
 from Model.encoder import ViTMaskedEncoder
+from Model.decoder import ViTMaskedDecoder
 from Model.prepare_input import Prepare
 import os
 from tqdm import tqdm
 from torchvision import transforms
 from torch.utils.data import DataLoader
 import torch
+from torch import nn
+
+class Model(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.encoder = ViTMaskedEncoder(depth=4)
+        self.decoder = ViTMaskedDecoder(depth=2)
+    
+    def forward(self, x):
+        out, mask = self.encoder(x)
+        out = self.decoder(out, mask)
+        return out
 
 def debug(out, model):
     print('Shape:', out.shape)
@@ -17,6 +30,7 @@ def debug(out, model):
     print("Mean cosine similarity to average patch:", cos.mean().item())
 
     print("\n--- Weight Statistics ---")
+    # If gradients are less then 1e-8 using dummy loss, there is vanishing gradients
     for name, param in model.named_parameters():
         if param.requires_grad:
             weight_mean = param.data.mean().item()
@@ -26,8 +40,7 @@ def debug(out, model):
             print(f"{name}: mean={weight_mean:.4e}, std={weight_std:.4e}, min={weight_min:.4e}, max={weight_max:.4e}")
             
 if __name__ == "__main__":
-    encoder = ViTMaskedEncoder()
-    
+    model = Model()
     base_dataset_dir=os.path.join(os.getcwd(), 'dataset')
     transform = transforms.Compose([
         transforms.Resize((128, 128)),
@@ -48,9 +61,9 @@ if __name__ == "__main__":
             if i >= 1:
                 break
             x = Prepare.fuse_normalize([x1, x2])
-            out, mask = encoder(x)
-            loss = out.mean()  # dummy loss for debugging
+            out = model(x)
+            loss = out.mean() # dummy loss for debugging
             loss.backward()
-            debug(out, encoder)
+            debug(out, model)
             i += 1
             

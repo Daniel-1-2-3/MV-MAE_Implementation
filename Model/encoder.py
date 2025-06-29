@@ -46,7 +46,10 @@ class ViTMaskedEncoder(nn.Module):
                         with a shape of (batch, height, width_total, channels)
 
         Returns:
-            x (Tensor): _description_
+            x (Tensor):         Has shape (batch, unmasked_patches, embed_dim)
+            mask (Tensor):      Has shape (batch, total_num_patches), where each vector in the 
+                                last dimension is a binary mask with 0 representing unmasked, and 
+                                1 representing masked
         """
         
         x = self.forward_early_conv(x) # Early conv to embed patches 
@@ -54,6 +57,7 @@ class ViTMaskedEncoder(nn.Module):
         
         x = self.add_pos_embeds(x) # Add sin/cos positional embeddings to each patch, addition element wise along last dim
         x, mask = self.random_view_masking(x, mask_ratio=0.20)
+        # - (batch, unmasked_patches, embed_dim)
      
         for i in range(self.depth):
             x = self.vit_block(x)
@@ -73,11 +77,9 @@ class ViTMaskedEncoder(nn.Module):
 
         Returns:
             x_masked (Tensor):  Has shape (batch, num_unmasked_patches, embed_dim)
-            mask (Tensor):      has shape (batch, total_num_patches), where each vector in the 
+            mask (Tensor):      Has shape (batch, total_num_patches), where each vector in the 
                                 last dimension is a binary mask with 0 representing unmasked, and 
                                 1 representing masked
-            ids_restore (Tensor):   has shape (batch, num_masked), where each vector in the
-                                    last dimension is a series of ids for the masked positions
         """
         batch, num_patches, embed_dim = x.shape
         # x is currently (batch, patches_left_view + patches_right_view, embed_dim)
@@ -112,7 +114,6 @@ class ViTMaskedEncoder(nn.Module):
         
             x_kept.append(x_sample_i)
             mask_all.append(mask)
-            all_ids = torch.cat([keep_ids, torch.where(mask == 1)[0]])
 
         x = torch.stack(x_kept)
         return x, torch.stack(mask_all)
