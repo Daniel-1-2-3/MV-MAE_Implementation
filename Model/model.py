@@ -51,6 +51,7 @@ class Model(nn.Module):
         """
         x, mask = self.encoder(x)
         x = self.decoder(x, mask)
+
         out = self.out_proj(x)
         return out, mask
     
@@ -111,17 +112,25 @@ class Model(nn.Module):
 
         return torch.cat(patchified_views, dim=1)
 
-    def unpatchify(self, x: Tensor):
+    def unpatchify(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            x (Tensor): (batch, total_patches, patch_size^2 * C]
-        returns: 
-            x (Tensor): [B, C, H, W_fused] with all views stitched horizontally
+            x: (B, total_patches, patch_size**2 * C)
+        Returns:
+            imgs: (B, C, H, W_fused) with views stitched horizontally
         """
-        _, _, dim = x.shape
+        _, total_patches, dim = x.shape
         c = dim // (self.patch_size ** 2)
-        x = einops.rearrange(x, 'b (h w) (p1 p2 c) -> b c (h p1) (w p2)',
-            h=self.img_h_size // self.patch_size, w=self.img_w_fused // self.patch_size,
-            p1=self.patch_size, p2=self.patch_size, c=c
-        )
-        return x
+
+        patches_per_view = total_patches // self.nviews
+        h = self.img_h_size // self.patch_size
+        w = self.img_w_size // self.patch_size
+
+        views = torch.split(x, patches_per_view, dim=1) # Split the concatenated views
+        imgs = [
+            einops.rearrange(v, 'b (h w) (p1 p2 c) -> b c (h p1) (w p2)',
+                h=h, w=w, p1=self.patch_size, p2=self.patch_size, c=c)
+            for v in views
+        ]
+        
+        return torch.cat(imgs, dim=3)
