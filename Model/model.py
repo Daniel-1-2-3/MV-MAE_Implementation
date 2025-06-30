@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 from Model.encoder import ViTMaskedEncoder
 from Model.decoder import ViTMaskedDecoder
-from Model.prepare_input import Prepare
+import matplotlib.pyplot as plt
 
 class Model(nn.Module):
     def __init__(self, 
@@ -34,7 +34,7 @@ class Model(nn.Module):
         
         self.encoder = ViTMaskedEncoder(depth=4)
         self.decoder = ViTMaskedDecoder(depth=2)
-        self.out_proj = nn.Linear(decoder_embed_dim, self.num_patches ** 2 * in_channels)
+        self.out_proj = nn.Linear(decoder_embed_dim, self.patch_size ** 2 * in_channels)
     
     def forward(self, x: Tensor):
         """
@@ -68,12 +68,22 @@ class Model(nn.Module):
         Returns:
             loss (Tensor): MSE loss, retains grad information
         """
-        truth = self.patchify_ground_truth_views(truth)
-        loss_per_patch = F.mse_loss(out, truth).mean(dim=-1)
+        truth = self.patchify(truth)
+        loss_per_patch = F.mse_loss(out, truth, reduction='none').mean(dim=-1) # Reduction 'None' for per-element loss
         loss = (loss_per_patch * mask).sum() / mask.sum() # Only calculate loss for masked patches
         return loss
-
-    def patchify_ground_truth_views(self, x: Tensor):
+    
+    def render_reconstruction(self, x: Tensor):
+        """
+        Args:
+            x (Tensor): (batch, total_patches, patch_size^2 * channels)
+        """
+        x = self.unpatchify(x)[0]
+        x = x.detach().cpu().clamp(0, 1).permute(1, 2, 0).numpy()
+        plt.imshow(x)
+        plt.show()
+        
+    def patchify(self, x: Tensor):
         """
         Convert the ground truth views into patches to match the format of the
         decoder output, in order to compute loss
@@ -97,4 +107,17 @@ class Model(nn.Module):
 
         return torch.cat(patchified_views, dim=1)
 
-
+    def unpatchify(self, x: Tensor):
+        """
+        Args:
+            x (Tensor): (batch, total_patches, patch_size^2 * C]
+        returns: 
+            x (Tensor): [B, C, H, W_fused] with all views stitched horizontally
+        """
+        _, _, dim = x.shape
+        c = dim // (self.patch_size ** 2)
+        x = einops.rearrange(x, 'b (h w) (p1 p2 c) -> b c (h p1) (w p2)',
+            h=self.img_h_size // self.patch_size, w=self.img_w_fused // self.patch_size,
+            p1=self.patch_size, p2=self.patch_size, c=c
+        )
+        return x
