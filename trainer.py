@@ -73,7 +73,6 @@ class Trainer():
                 loss = self.model.compute_loss(out, x, mask)
                 loss.backward()
                 optimizer.step()
-                self.model.render_reconstruction(out)
                 # self.debug(out, self.model)
                 
                 total_loss += loss.item()
@@ -107,14 +106,14 @@ class Trainer():
                 out, mask = self.model(x)
                 loss = self.model.compute_loss(out, x, mask)
                 total_loss += loss.item()
-            self.model.render_reconstruction()
+            self.model.render_reconstruction(out)
                 
         self.model.train()
         return total_loss / len(self.val_loader)
         
     def debug(self, out, model, file_path='debug.txt'):
         with open(file_path, 'a') as f:
-            f.write('Shape: {}\n'.format(out.shape))
+            f.write('Shape: {}\nd'.format(out.shape))
             f.write("Mean: {}\n".format(out.mean().item()))
             f.write("Std dev: {}\n".format(out.std().item()))
             f.write("NaNs: {}\n".format(torch.isnan(out).any().item()))
