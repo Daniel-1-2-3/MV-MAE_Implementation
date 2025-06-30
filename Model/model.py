@@ -127,6 +127,7 @@ class Model(nn.Module):
         w = self.img_w_size // self.patch_size
 
         views = torch.split(x, patches_per_view, dim=1) # Split the concatenated views
+
         imgs = [
             einops.rearrange(v, 'b (h w) (p1 p2 c) -> b c (h p1) (w p2)',
                 h=h, w=w, p1=self.patch_size, p2=self.patch_size, c=c)

@@ -69,8 +69,6 @@ class Trainer():
                 x1, x2 = x1.to(self.device), x2.to(self.device)
                 optimizer.zero_grad()
                 x = Prepare.fuse_normalize([x1, x2])
-                
-                
                 out, mask = self.model(x)
                 loss = self.model.compute_loss(out, x, mask)
                 loss.backward()
