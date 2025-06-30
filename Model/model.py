@@ -54,21 +54,22 @@ class Model(nn.Module):
         out = self.out_proj(x)
         return out, mask
     
-    def compute_loss(self, out, truth, mask):
+    def compute_loss(self, out: Tensor, truth: Tensor, mask: Tensor):
         """
         Compute MSE loss
 
         Args:
-            out (_type_): (batch, total_patches, patch_size^2 * channels)
-            truth (_type_): Fused views (batch, height, width_total, channels)
-            mask (_type_):  Has shape (batch, total_num_patches), where each vector in the 
+            out (Tensor): (batch, total_patches, patch_size^2 * channels)
+            truth (Tensor): Fused views (batch, height, width_total, channels)
+            mask (Tensor):  Has shape (batch, total_num_patches), where each vector in the 
                             last dimension is a binary mask with 0 representing unmasked, and 
                             1 representing masked
 
         Returns:
             loss (Tensor): MSE loss, retains grad information
         """
-        truth = self.patchify(truth)
+        mask = mask.to(out.device)
+        truth = self.patchify(truth).to(out.device)
         loss_per_patch = F.mse_loss(out, truth, reduction='none').mean(dim=-1) # Reduction 'None' for per-element loss
         loss = (loss_per_patch * mask).sum() / mask.sum() # Only calculate loss for masked patches
         return loss
@@ -79,6 +80,9 @@ class Model(nn.Module):
             x (Tensor): (batch, total_patches, patch_size^2 * channels)
         """
         x = self.unpatchify(x)[0]
+        mean = torch.tensor([0.51905, 0.47986, 0.48809], device=x.device).view(3, 1, 1)
+        std = torch.tensor([0.17454, 0.20183, 0.19598], device=x.device).view(3, 1, 1)
+        x = x * std + mean
         x = x.detach().cpu().clamp(0, 1).permute(1, 2, 0).numpy()
         plt.imshow(x)
         plt.show()
