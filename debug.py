@@ -1,43 +1,31 @@
 from CreateDataset.dataset import StereoImageDataset
-from Model.encoder import ViTMaskedEncoder
-from Model.decoder import ViTMaskedDecoder
 from Model.prepare_input import Prepare
+from Model.model import Model
 import os
 from tqdm import tqdm
 from torchvision import transforms
 from torch.utils.data import DataLoader
 import torch
-from torch import nn
 
-class Model(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.encoder = ViTMaskedEncoder(depth=4)
-        self.decoder = ViTMaskedDecoder(depth=2)
-    
-    def forward(self, x):
-        out, mask = self.encoder(x)
-        out = self.decoder(out, mask)
-        return out
+def debug(out, model, file_path='debug.txt'):
+    with open(file_path, 'a') as f:
+        f.write('Shape: {}\n'.format(out.shape))
+        f.write("Mean: {}\n".format(out.mean().item()))
+        f.write("Std dev: {}\n".format(out.std().item()))
+        f.write("NaNs: {}\n".format(torch.isnan(out).any().item()))
+        
+        cos = torch.nn.functional.cosine_similarity(out[:, 1:, :], out[:, 1:, :].mean(dim=1, keepdim=True), dim=-1)
+        f.write("Mean cosine similarity to average patch: {}\n".format(cos.mean().item()))
 
-def debug(out, model):
-    print('Shape:', out.shape)
-    print("Mean:", out.mean().item())
-    print("Std dev:", out.std().item())
-    print("NaNs:", torch.isnan(out).any().item())
-    
-    cos = torch.nn.functional.cosine_similarity(out[:, 1:, :], out[:, 1:, :].mean(dim=1, keepdim=True), dim=-1)
-    print("Mean cosine similarity to average patch:", cos.mean().item())
-
-    print("\n--- Weight Statistics ---")
-    # If gradients are less then 1e-8 using dummy loss, there is vanishing gradients
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            weight_mean = param.data.mean().item()
-            weight_std = param.data.std().item()
-            weight_min = param.data.min().item()
-            weight_max = param.data.max().item()
-            print(f"{name}: mean={weight_mean:.4e}, std={weight_std:.4e}, min={weight_min:.4e}, max={weight_max:.4e}")
+        f.write("\n--- Weight Statistics ---\n")
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                weight_mean = param.data.mean().item()
+                weight_std = param.data.std().item()
+                weight_min = param.data.min().item()
+                weight_max = param.data.max().item()
+                f.write(f"{name}: mean={weight_mean:.4e}, std={weight_std:.4e}, min={weight_min:.4e}, max={weight_max:.4e}\n")
+        f.write("\n")
             
 if __name__ == "__main__":
     model = Model()
@@ -52,18 +40,18 @@ if __name__ == "__main__":
     loader = DataLoader(dataset, batch_size=16, shuffle=True, 
         num_workers=8, pin_memory=True, drop_last=True)
     
-    i = 0
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0003) 
+    model.train()
     for epoch in range(0, 10):
-        if i >= 1:
-            break
         total_loss = 0.0
         for x1, x2 in tqdm(loader, desc=f"Epoch {epoch + 1} - Training", leave=False):
-            if i >= 1:
-                break
+            optimizer.zero_grad()
             x = Prepare.fuse_normalize([x1, x2])
-            out = model(x)
-            loss = out.mean() # dummy loss for debugging
+            out, mask = model(x)
+            loss = model.compute_loss(out, x, mask)
             loss.backward()
+            optimizer.step()
+            model.render_reconstruction(out)
             debug(out, model)
             i += 1
             

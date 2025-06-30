@@ -52,7 +52,7 @@ class Model(nn.Module):
         x, mask = self.encoder(x)
         x = self.decoder(x, mask)
         out = self.out_proj(x)
-        return out
+        return out, mask
     
     def compute_loss(self, out, truth, mask):
         """
