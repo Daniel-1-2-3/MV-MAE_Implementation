@@ -7,6 +7,7 @@ from torchvision import transforms
 from torch.utils.data import DataLoader
 import torch
 import shutil
+from kaggle.api.kaggle_api_extended import KaggleApi
 
 class Trainer():
     def __init__(self, 
@@ -130,3 +131,29 @@ class Trainer():
                     weight_max = param.data.max().item()
                     f.write(f"{name}: mean={weight_mean:.4e}, std={weight_std:.4e}, min={weight_min:.4e}, max={weight_max:.4e}\n")
             f.write("\n")
+            
+if __name__ == "__main__":
+    dataset_folder = os.path.join(os.getcwd(), 'dataset')
+    
+    if not os.path.exists(dataset_folder): 
+        api = KaggleApi()
+        api.authenticate()
+        api.dataset_download_files('thisisdaniel12345/dataset', path=os.path.join(os.getcwd(), 'dataset'), unzip=True)
+        
+    trainer = Trainer(
+        nviews=2,
+        patch_size=8,
+        encoder_embed_dim=768,
+        decoder_embed_dim=512,
+        encoder_heads=16,
+        decoder_heads=16,
+        in_channels=3,
+        img_h_size=128,
+        img_w_size=128, 
+        lr=1e-4,
+        epochs=50,
+        batch_size=16,
+        base_dataset_dir=os.path.join(os.getcwd(), 'dataset')
+    )
+
+    trainer.train()
